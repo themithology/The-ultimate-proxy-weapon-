@@ -22,6 +22,8 @@ try {
   assert.equal(await page.locator('#connection-status').textContent(), 'SYSTEM ONLINE');
   assert.equal(await page.locator('body').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(11, 15, 14)', 'stylesheet should apply over HTTP');
   assert.equal(await page.locator('#proxy-rows tr').count(), 1);
+  assert.equal(await page.locator('#developer-title').textContent(), 'Endpoint integration guide');
+  assert.ok((await page.locator('#node-example').textContent()).includes(`http://dashboard.test:${server.address().port}`));
   await page.locator('[data-filter="socks5"]').click();
   assert.equal(await page.locator('#proxy-rows tr').count(), 0);
   await page.locator('[data-filter="all"]').click();

@@ -62,3 +62,12 @@ test('a non-2xx response is cooled down instead of repeatedly fetched', async t 
   } };
   assert.equal((await scrapeSources(redirectOptions)).successes, 0);
 });
+
+
+test('2xx feed responses other than 200 are accepted', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'source-201-')); t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const sourcesPath = path.join(directory, 'sources.json');
+  await fs.writeFile(sourcesPath, JSON.stringify([{ url: 'http://ok.test', protocol: 'http' }]));
+  const result = await scrapeSources({ sourcesPath, fetchImpl: async () => new Response('1.2.3.4:80', { status: 201 }) });
+  assert.equal(result.successes, 1); assert.equal(result.proxies.length, 1);
+});

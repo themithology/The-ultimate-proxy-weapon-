@@ -42,7 +42,7 @@ test('gateway immediately retires an upstream on a non-2xx response', async t =>
       const req = http.get({ host: '127.0.0.1', port: gateway.server.address().port, path: `http://127.0.0.1:${target.address().port}/`, headers: { 'Proxy-Authorization': `Basic ${Buffer.from('u:p').toString('base64')}` } }, res => { res.resume(); res.on('end', () => resolve(res.statusCode)); }); req.on('error', reject);
     });
   }
-  assert.equal(await request(), 200); assert.equal(await request(), 200);
+  status = 201; assert.equal(await request(), 201); status = 200; assert.equal(await request(), 200);
   assert.equal(pool.getHealth(url).baselineSuccessRate, 1);
   status = 503; assert.equal(await request(), 503); assert.equal(pool.list().length, 0); await pool.writeQueue;
   assert.equal(await request(), 503);

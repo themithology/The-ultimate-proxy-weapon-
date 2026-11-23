@@ -25,7 +25,7 @@ function connect(port, auth) { return new Promise((resolve, reject) => {
 
 test('parse and fetch feeds, validate and serve rotating local proxies', async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'proxy-test-')); t.after(() => fs.rm(dir, { recursive: true, force: true }));
-  const echo = http.createServer((req, res) => { if (req.url === '/missing') res.statusCode = 404; if (req.url === '/redirect') res.statusCode = 302; res.end(JSON.stringify({ ip: '127.0.0.1' })); }); await listen(echo); t.after(() => close(echo));
+  const echo = http.createServer((req, res) => { if (req.url === '/created') res.statusCode = 201; if (req.url === '/missing') res.statusCode = 404; if (req.url === '/redirect') res.statusCode = 302; res.end(JSON.stringify({ ip: '127.0.0.1' })); }); await listen(echo); t.after(() => close(echo));
   const upstream = new Server({ host: '127.0.0.1', port: 0 }); await upstream.listen(); t.after(() => upstream.close(true));
   const upstream2 = new Server({ host: '127.0.0.1', port: 0 }); await upstream2.listen(); t.after(() => upstream2.close(true));
   const a = upstream.server.address().port, b = upstream2.server.address().port;
@@ -59,6 +59,10 @@ test('parse and fetch feeds, validate and serve rotating local proxies', async t
   assert.equal((await fetch(`${base}/fetch?url=invalid`, { headers: { 'x-api-key': 'key' } })).status, 400);
   const fetched = await fetch(`${base}/fetch?url=${encodeURIComponent(targetUrl)}`, { headers: { 'x-api-key': 'key' } });
   assert.equal(fetched.status, 200); assert.equal((await fetched.json()).ip, '127.0.0.1');
+  const created = await fetch(`${base}/fetch?url=${encodeURIComponent(targetUrl + 'created')}`, { headers: { 'x-api-key': 'key' } });
+  assert.equal(created.status, 201); await created.text(); assert.equal(pool.list().length, 2, '2xx must keep proxy');
+  const validated201 = await validateProxies(scraped.proxies.slice(0, 1), { concurrency: 1, timeout: 1000, echoUrl: targetUrl + 'created' });
+  assert.equal(validated201.length, 1, '2xx echo responses are accepted');
   assert.equal((await (await fetch(`${base}/proxies.json`, { headers: { 'x-api-key': 'key' } })).json()).length, 2);
   assert.equal((await fetch(`${base}/refresh`, { method: 'POST', headers: { 'x-api-key': 'key' } })).status, 202);
   // A forward-proxy request exercises the gateway and its upstream, end to end.

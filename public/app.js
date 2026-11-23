@@ -89,5 +89,17 @@ $('#refresh').addEventListener('click', async () => {
 });
 $('#load-more').addEventListener('click', () => { state.shown += 200; renderTable(); });
 $('#copy-gateway').addEventListener('click', () => copy($('#gateway-address').textContent));
+const nodeExample = `// Set PROXY_API_KEY in this scraper project's environment.
+const endpoint = new URL('/fetch', ${JSON.stringify(location.origin)});
+endpoint.searchParams.set('url', 'https://example.com/');
+
+const response = await fetch(endpoint, {
+  headers: { 'x-api-key': process.env.PROXY_API_KEY }
+});
+if (!response.ok) throw new Error('Proxy fetch failed: ' + response.status);
+const body = await response.text();
+console.log(body);`;
+$('#node-example').textContent = nodeExample;
+$('#copy-example').addEventListener('click', () => copy(nodeExample));
 function clock() { $('#clock').textContent = `${new Date().toISOString().slice(11, 19)} UTC`; }
 clock(); setInterval(clock, 1000); update(); setInterval(update, 5000);
