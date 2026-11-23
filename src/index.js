@@ -57,8 +57,8 @@ await proxy.listen();
 const api = createApi(pool, config, () => cycle(true), () => ({ ...cycleStatus })).listen(config.apiPort, config.host, () => console.log(`API listening on ${config.host}:${config.apiPort}`));
 api.on('error', error => { console.error('API server failed:', error); proxy.close(true).finally(() => process.exit(1)); });
 console.log(`Gateway listening on ${config.proxyHost}:${config.proxyPort}`);
-const refreshSchedule = config.scrapeIntervalMinutes === 60 ? '0 * * * *' : `*/${config.scrapeIntervalMinutes} * * * *`;
-// Offset the revalidation tick so it does not always coincide with a refresh.
-const jobs = [cron.schedule(refreshSchedule, () => cycle(true)), cron.schedule('1-59/5 * * * *', () => cycle(false))];
+// Interval ticks never overlap an active cycle; busy ticks are skipped.
+const refreshTimer = setInterval(() => cycle(true), config.scrapeIntervalSeconds * 1000);
+const revalidationJob = cron.schedule('1-59/5 * * * *', () => cycle(false));
 cycle(true);
-for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => { jobs.forEach(job => job.stop()); api.close(); await proxy.close(true); process.exit(0); });
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => { clearInterval(refreshTimer); revalidationJob.stop(); api.close(); await proxy.close(true); process.exit(0); });
