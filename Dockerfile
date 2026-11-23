@@ -4,6 +4,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY src ./src
+COPY public ./public
 COPY config ./config
 RUN mkdir -p data && chown -R node:node /app
 USER node

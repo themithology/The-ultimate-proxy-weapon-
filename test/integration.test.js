@@ -43,6 +43,10 @@ test('parse and fetch feeds, validate and serve rotating local proxies', async t
   const api = createApi(pool, config, () => true); const apiServer = http.createServer(api); await listen(apiServer); t.after(() => close(apiServer));
   const base = `http://127.0.0.1:${apiServer.address().port}`;
   assert.equal((await fetch(`${base}/health`)).status, 200);
+  assert.match(await (await fetch(base)).text(), /Network overview/);
+  assert.equal((await (await fetch(`${base}/dashboard/data`)).json()).proxies.length, 2);
+  assert.equal((await fetch(`${base}/dashboard/refresh`, { method: 'POST' })).status, 202);
+  assert.equal((await (await fetch(`${base}/dashboard/proxies.txt`)).text()).trim().split('\n').length, 2);
   assert.equal((await fetch(`${base}/proxies.json`)).status, 401);
   assert.equal((await (await fetch(`${base}/proxies.json`, { headers: { 'x-api-key': 'key' } })).json()).length, 2);
   assert.equal((await fetch(`${base}/refresh`, { method: 'POST', headers: { 'x-api-key': 'key' } })).status, 202);

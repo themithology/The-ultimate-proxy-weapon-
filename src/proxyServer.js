@@ -30,7 +30,7 @@ function observeConnect(socket, onOutcome) {
 }
 export function createProxyServer(pool, config) {
   const selected = new WeakMap();
-  const server = new Server({ host: config.host, port: config.proxyPort, prepareRequestFunction: ({ username, password, request }) => {
+  const server = new Server({ host: config.proxyHost || config.host, port: config.proxyPort, prepareRequestFunction: ({ username, password, request }) => {
     if (!safeEqual(username, config.proxyUser) || !safeEqual(password, config.proxyPass)) return { requestAuthentication: true, failMsg: 'Authentication required' };
     const upstream = pool.select();
     // Returning a falsy upstream would accidentally make this an open direct proxy.

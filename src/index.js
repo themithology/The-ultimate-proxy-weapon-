@@ -10,9 +10,11 @@ const config = loadConfig();
 const pool = new ProxyPool({ rotation: config.rotation, healthBaselineRequests: config.healthBaselineRequests, healthWindow: config.healthWindow, healthRetentionRatio: config.healthRetentionRatio });
 await pool.load();
 let busy = false;
+const cycleStatus = { busy: false, type: null, startedAt: null, lastCompletedAt: null, error: null };
 function cycle(scrape) {
   if (busy) return false;
   busy = true;
+  Object.assign(cycleStatus, { busy: true, type: scrape ? 'refresh' : 'revalidation', startedAt: new Date().toISOString(), error: null });
   (async () => {
     const revision = pool.revision;
     let candidates = pool.list();
@@ -39,14 +41,14 @@ function cycle(scrape) {
     await pool.replace(stillHealthy);
     pool.evictions.clear();
     console.log(`Validated ${stillHealthy.length}/${candidates.length} proxies`);
-  })().catch(error => console.error('Cycle failed:', error)).finally(() => { busy = false; });
+  })().catch(error => { cycleStatus.error = error.message; console.error('Cycle failed:', error); }).finally(() => { busy = false; cycleStatus.busy = false; cycleStatus.lastCompletedAt = new Date().toISOString(); });
   return true;
 }
 const proxy = createProxyServer(pool, config);
 await proxy.listen();
-const api = createApi(pool, config, () => cycle(true)).listen(config.apiPort, config.host, () => console.log(`API listening on ${config.host}:${config.apiPort}`));
+const api = createApi(pool, config, () => cycle(true), () => ({ ...cycleStatus })).listen(config.apiPort, config.host, () => console.log(`API listening on ${config.host}:${config.apiPort}`));
 api.on('error', error => { console.error('API server failed:', error); proxy.close(true).finally(() => process.exit(1)); });
-console.log(`Gateway listening on ${config.host}:${config.proxyPort}`);
+console.log(`Gateway listening on ${config.proxyHost}:${config.proxyPort}`);
 const jobs = [cron.schedule('*/15 * * * *', () => cycle(true)), cron.schedule('*/5 * * * *', () => cycle(false))];
 cycle(true);
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => { jobs.forEach(job => job.stop()); api.close(); await proxy.close(true); process.exit(0); });

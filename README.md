@@ -2,6 +2,8 @@
 
 Self-hosted Node.js 20.11+ service that collects public IPv4 proxy feeds, checks exit IP and latency, and provides an authenticated HTTP forward proxy and management API. **Public proxies are untrusted:** operators can log, alter, block or intercept traffic. Do not send credentials or sensitive data through them. Respect website terms, robots policies, rate limits and applicable laws. This project does not guarantee privacy, anonymity, availability or the accuracy of public feed claims.
 
+See [PTERODACTYL.md](PTERODACTYL.md) for panel deployment instructions.
+
 ## Quick start
 
 ```sh
@@ -11,6 +13,8 @@ npm ci
 npm start
 # Or: docker compose up --build -d
 ```
+
+Open **http://localhost:8000/** for the personal dashboard. The dashboard has no login: anyone who can reach the API port can view the pool, download it, and trigger refreshes. Bind to a private interface or restrict the port with a firewall if you do not want it exposed. The proxy gateway still requires the configured credentials.
 
 Both servers start immediately; the initial scrape runs in the background and can take a long time. The gateway returns 503 until a working upstream is available. When the pool starts empty, successful validation batches are published as the scan progresses, rather than waiting for the entire feed to be checked. Feed availability changes; edit `config/sources.json` to add/remove feeds. Entries have a `url` and default `protocol` (`http`, `https`, `socks4`, `socks5`). A scheme in a feed overrides its default. `https` means TLS **to the proxy**, not simply an HTTP proxy capable of CONNECT. Some upstream lists use “HTTPS” to mean CONNECT-capable HTTP proxies; configure those as `http`.
 
@@ -23,7 +27,7 @@ curl -X POST -H 'x-api-key: YOUR_API_KEY' http://localhost:8000/refresh
 curl -x http://user:pass@localhost:8080 https://httpbin.org/ip
 ```
 
-Replace credentials in the example. All endpoints except `/health` require the API key. `/refresh` returns 202 when started, 409 if a cycle is already running. The scraper runs every 15 minutes; existing proxies are rechecked every 5 minutes, with overlapping cycles skipped. Files are individually written with temporary files and atomic renames (the pair is not a transactional snapshot). A total source outage preserves the existing pool. Validation uses bounded batches and a strict timeout; configure concurrency and timeouts in `.env`. Increase the open-file limit if necessary. No memory usage figure is guaranteed; feed size and runtime conditions vary.
+Replace credentials in the example. The original management endpoints require the API key except `/health`; the no-login dashboard and its `/dashboard/*` endpoints are public to anyone who can reach the API port. `/refresh` returns 202 when started, 409 if a cycle is already running. The scraper runs every 15 minutes; existing proxies are rechecked every 5 minutes, with overlapping cycles skipped. Files are individually written with temporary files and atomic renames (the pair is not a transactional snapshot). A total source outage preserves the existing pool. Validation uses bounded batches and a strict timeout; configure concurrency and timeouts in `.env`. Increase the open-file limit if necessary. No memory usage figure is guaranteed; feed size and runtime conditions vary.
 
 The validator requires the IP echo result to equal the proxy's IPv4 address. This rejects NAT/multi-hop exits and may accept a transparent proxy in unusual cases (e.g. running on the proxy host). It does **not** inspect forwarding headers or prove anonymity. `anonymity: exit-ip-match` describes only this test. Feed contents, IP echo service, and the network itself are not trusted. The default HTTPS echo verifies TLS. HTTPS target traffic is tunneled, but ordinary HTTP traffic and gateway Basic credentials are visible on the network; restrict access using a firewall/VPN. The gateway fails closed on an empty pool. Detected HTTP upstream connection errors and HTTP CONNECT rejections remove the selected upstream; destination failures can also lead to eviction. proxy-chain does not expose every SOCKS failure or dropped tunnel, so the periodic revalidation is the fallback for those cases. Long-lived tunnels are not continuously health-checked and cannot be transparently retried.
 
