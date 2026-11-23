@@ -43,7 +43,13 @@ test('parse and fetch feeds, validate and serve rotating local proxies', async t
   const api = createApi(pool, config, () => true); const apiServer = http.createServer(api); await listen(apiServer); t.after(() => close(apiServer));
   const base = `http://127.0.0.1:${apiServer.address().port}`;
   assert.equal((await fetch(`${base}/health`)).status, 200);
-  assert.match(await (await fetch(base)).text(), /Network overview/);
+  const dashboard = await fetch(base);
+  assert.match(await dashboard.text(), /Network overview/);
+  assert.doesNotMatch(dashboard.headers.get('content-security-policy'), /upgrade-insecure-requests/);
+  const css = await fetch(`${base}/styles.css`);
+  assert.equal(css.status, 200); assert.match(css.headers.get('content-type'), /text\/css/);
+  assert.match(await css.text(), /\.app-shell/);
+  assert.equal((await fetch(`${base}/app.js`)).status, 200);
   assert.equal((await (await fetch(`${base}/dashboard/data`)).json()).proxies.length, 2);
   assert.equal((await fetch(`${base}/dashboard/refresh`, { method: 'POST' })).status, 202);
   assert.equal((await (await fetch(`${base}/dashboard/proxies.txt`)).text()).trim().split('\n').length, 2);

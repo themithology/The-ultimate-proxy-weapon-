@@ -23,13 +23,13 @@ This ZIP extracts directly into the current directory. It contains the applicati
 
    Replace `SECOND_ALLOCATED_PORT` with the actual number, and choose your own credentials. Do not use `change-me`. The dashboard itself has no login. `API_KEY` is required for the separate API; the gateway requires the proxy username and password.
 3. In `.env`, **delete the `API_PORT=8000` line** if your Node egg provides `SERVER_PORT`; the app will then use the primary allocation automatically. Otherwise, set `API_PORT` to the numeric primary allocation. `API_PORT` overrides `SERVER_PORT` if both are set. The dashboard and proxy ports must be different.
-4. Set the Node egg startup command to:
+4. If your egg has a **Main File** or **Startup File** field, set it to `src/index.js` (not `index.js`). If the egg instead lets you set the full startup command, use:
 
    ```sh
    npm ci --omit=dev && npm start
    ```
 
-   If your egg manages dependency installation or the startup command differently, install dependencies with `npm ci --omit=dev` and configure it to run `npm start` in the project root. Package installation needs access to the npm registry. Do not use an egg that only starts a fixed Java `.jar` file.
+   If the egg already installs dependencies and starts its Main File, leave that behavior enabled; do not put an npm command in the Main File field. Otherwise, install dependencies with `npm ci --omit=dev` and configure it to run `npm start` in the project root. Package installation needs access to the npm registry. Do not use an egg that only starts a fixed Java `.jar` file.
 5. Start the server. Open `http://YOUR_SERVER_ADDRESS:PRIMARY_PORT/` for the dashboard. Use the allocated IP/domain and port shown by your host; if the host maps ports externally, use its public address/port instead of assuming the internal value.
 6. Configure your scraper to use `http://your_proxy_username:your_proxy_password@YOUR_SERVER_ADDRESS:SECOND_PORT` as its HTTP proxy. The gateway supports HTTPS destinations via CONNECT. Replace the placeholders with your actual values.
 

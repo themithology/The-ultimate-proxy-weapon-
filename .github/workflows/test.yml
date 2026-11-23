@@ -36,3 +36,17 @@ jobs:
       - run: npm ci
       - name: Check real feeds, public proxies, API and gateway
         run: node scripts/live-smoke.js
+  browser-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --ignore-scripts playwright
+      - run: npx playwright install --with-deps chromium
+      - name: Verify dashboard over plain HTTP in a real browser
+        run: node scripts/ui-smoke.js

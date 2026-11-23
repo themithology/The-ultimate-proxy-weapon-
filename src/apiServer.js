@@ -8,7 +8,7 @@ import { safeEqual } from './proxyServer.js';
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
 
 export function createApi(pool, config, refresh, getCycleStatus = () => ({ busy: false })) {
-  const app = express(); app.disable('x-powered-by'); app.use(helmet({ frameguard: false, contentSecurityPolicy: { directives: { frameAncestors: null } } })); app.use(cors());
+  const app = express(); app.disable('x-powered-by'); app.use(helmet({ frameguard: false, contentSecurityPolicy: { directives: { frameAncestors: null, upgradeInsecureRequests: null } } })); app.use(cors());
   app.get('/health', (_req, res) => {
     const items = pool.list(), counts = { http: 0, https: 0, socks4: 0, socks5: 0 };
     for (const item of items) if (item.protocol in counts) counts[item.protocol]++;
