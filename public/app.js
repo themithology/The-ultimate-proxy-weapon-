@@ -42,7 +42,13 @@ function render() {
   }
   $('#tab-all').textContent = number(proxies.length);
   const busy = !!data.cycle?.busy; $('#refresh').disabled = busy; $('#refresh span').textContent = busy ? 'Refresh in progress' : 'Refresh proxies';
-  if (data.cycle?.error) { showNotice(`Last cycle failed: ${data.cycle.error}`, true); showingCycleError = true; }
+  if (busy && data.cycle.stage === 'fetching') {
+    showNotice(`Fetching sources: ${number(data.cycle.sourcesCompleted || 0)} / ${number(data.cycle.sourcesTotal || 0)} finished · ${number(data.cycle.sourcesSucceeded || 0)} succeeded.`);
+    showingCycleError = true;
+  } else if (busy && data.cycle.stage === 'validating') {
+    showNotice(`Checking proxies: ${number(data.cycle.checked || 0)} / ${number(data.cycle.candidates || 0)} tested · ${number(data.cycle.found || 0)} working.`);
+    showingCycleError = true;
+  } else if (data.cycle?.error) { showNotice(`Last cycle failed: ${data.cycle.error}`, true); showingCycleError = true; }
   else if (showingCycleError) { $('#notice').hidden = true; showingCycleError = false; }
   $('#gateway-address').textContent = `http://YOUR_USER:YOUR_PASS@YOUR_HOST:${data.proxyPort || 8080}`;
   renderTable();

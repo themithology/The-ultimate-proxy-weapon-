@@ -14,22 +14,58 @@ export function parseFeed(text, defaultProtocol) {
   }
   return result;
 }
-export async function scrapeSources({ sourcesPath = 'config/sources.json', timeout = 10000, fetchImpl = fetch } = {}) {
+export async function scrapeSources({ sourcesPath = 'config/sources.json', timeout = 10000, fetchImpl = fetch, limit = Infinity, onProgress = () => {}, cursorBySource = new Map() } = {}) {
   const sources = JSON.parse(await fs.readFile(sourcesPath, 'utf8'));
   if (!Array.isArray(sources)) throw new Error('sources.json must contain an array');
+  let completed = 0, successes = 0;
   const settled = await Promise.allSettled(sources.map(async source => {
-    const response = await fetchImpl(source.url, { signal: AbortSignal.timeout(timeout), redirect: 'follow' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    // Bound a feed's memory footprint, including when Content-Length is absent.
-    const reader = response.body.getReader(); let size = 0, chunks = [];
-    try { while (true) { const { done, value } = await reader.read(); if (done) break; size += value.length; if (size > 10_000_000) throw new Error('Feed too large'); chunks.push(value); } }
-    finally { await reader.cancel().catch(() => {}); }
-    return parseFeed(Buffer.concat(chunks).toString('utf8'), source.protocol);
+    const controller = new AbortController();
+    let timer;
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => { controller.abort(); reject(new Error(`Timeout after ${timeout}ms`)); }, timeout);
+    });
+    const fetchSource = async () => {
+      const response = await fetchImpl(source.url, { signal: controller.signal, redirect: 'follow' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const reader = response.body.getReader(); let size = 0, chunks = [];
+      try {
+        while (true) {
+          const { done, value } = await reader.read(); if (done) break;
+          size += value.length; if (size > 10_000_000) throw new Error('Feed too large'); chunks.push(value);
+        }
+        return parseFeed(Buffer.concat(chunks).toString('utf8'), source.protocol);
+      } finally {
+        // Some broken streams never settle cancel(); never block the entire scrape on it.
+        reader.cancel().catch(() => {});
+      }
+    };
+    try {
+      const entries = await Promise.race([fetchSource(), deadline]);
+      successes++;
+      return entries;
+    } finally {
+      clearTimeout(timer); controller.abort(); completed++;
+      onProgress({ completed, total: sources.length, successes });
+    }
   }));
-  const unique = new Map(); let successes = 0;
+  const lists = [];
   settled.forEach((entry, i) => {
-    if (entry.status === 'fulfilled') { successes++; for (const proxy of entry.value) unique.set(proxy.url, proxy); }
-    else console.warn(`Source failed: ${sources[i].url}: ${entry.reason.message}`);
+    if (entry.status === 'fulfilled' && entry.value.length) lists.push({ url: sources[i].url, entries: entry.value });
+    else if (entry.status === 'rejected') console.warn(`Source failed: ${sources[i].url}: ${entry.reason.message}`);
   });
-  return { proxies: [...unique.values()], successes, total: sources.length };
+  // Mix feeds and advance a per-source cursor across refreshes. Changing feeds can
+  // reorder between runs, so complete coverage is not guaranteed.
+  const offsets = lists.map(({ url, entries }) => (cursorBySource.get(url) ?? Math.floor(Math.random() * entries.length)) % entries.length);
+  const positions = lists.map(() => 0), unique = new Map();
+  let remaining = lists.length;
+  while (remaining && unique.size < limit) {
+    for (let i = 0; i < lists.length && unique.size < limit; i++) {
+      const list = lists[i].entries; if (positions[i] >= list.length) continue;
+      const proxy = list[(offsets[i] + positions[i]++) % list.length];
+      unique.set(proxy.url, proxy);
+      if (positions[i] === list.length) remaining--;
+    }
+  }
+  lists.forEach(({ url, entries }, i) => cursorBySource.set(url, (offsets[i] + positions[i]) % entries.length));
+  return { proxies: [...unique.values()], successes, total: sources.length, limited: unique.size >= limit };
 }
