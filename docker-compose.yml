@@ -1,0 +1,17 @@
+services:
+  proxy:
+    build: .
+    env_file: .env
+    environment:
+      NODE_OPTIONS: --max-old-space-size=1024
+    ports:
+      - "8000:8000"
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config:ro
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 4096

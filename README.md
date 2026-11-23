@@ -1,1 +1,60 @@
-# The-ultimate-proxy-weapon-
+# Automatic Proxy Scraper & Rotating Gateway
+
+Self-hosted Node.js 20.11+ service that collects public IPv4 proxy feeds, checks exit IP and latency, and provides an authenticated HTTP forward proxy and management API. **Public proxies are untrusted:** operators can log, alter, block or intercept traffic. Do not send credentials or sensitive data through them. Respect website terms, robots policies, rate limits and applicable laws. This project does not guarantee privacy, anonymity, availability or the accuracy of public feed claims.
+
+## Quick start
+
+```sh
+cp .env.example .env
+# Edit .env and replace all three change-me credentials with strong, unique secrets.
+npm ci
+npm start
+# Or: docker compose up --build -d
+```
+
+Both servers start immediately; the initial scrape runs in the background and can take a long time. The gateway returns 503 until a working upstream is available. When the pool starts empty, successful validation batches are published as the scan progresses, rather than waiting for the entire feed to be checked. Feed availability changes; edit `config/sources.json` to add/remove feeds. Entries have a `url` and default `protocol` (`http`, `https`, `socks4`, `socks5`). A scheme in a feed overrides its default. `https` means TLS **to the proxy**, not simply an HTTP proxy capable of CONNECT. Some upstream lists use “HTTPS” to mean CONNECT-capable HTTP proxies; configure those as `http`.
+
+```sh
+curl http://localhost:8000/health
+curl -H 'x-api-key: YOUR_API_KEY' 'http://localhost:8000/proxy/random?protocol=socks5&format=text'
+curl -H 'x-api-key: YOUR_API_KEY' http://localhost:8000/proxies.json
+curl -H 'x-api-key: YOUR_API_KEY' http://localhost:8000/proxies.txt
+curl -X POST -H 'x-api-key: YOUR_API_KEY' http://localhost:8000/refresh
+curl -x http://user:pass@localhost:8080 https://httpbin.org/ip
+```
+
+Replace credentials in the example. All endpoints except `/health` require the API key. `/refresh` returns 202 when started, 409 if a cycle is already running. The scraper runs every 15 minutes; existing proxies are rechecked every 5 minutes, with overlapping cycles skipped. Files are individually written with temporary files and atomic renames (the pair is not a transactional snapshot). A total source outage preserves the existing pool. Validation uses bounded batches and a strict timeout; configure concurrency and timeouts in `.env`. Increase the open-file limit if necessary. No memory usage figure is guaranteed; feed size and runtime conditions vary.
+
+The validator requires the IP echo result to equal the proxy's IPv4 address. This rejects NAT/multi-hop exits and may accept a transparent proxy in unusual cases (e.g. running on the proxy host). It does **not** inspect forwarding headers or prove anonymity. `anonymity: exit-ip-match` describes only this test. Feed contents, IP echo service, and the network itself are not trusted. The default HTTPS echo verifies TLS. HTTPS target traffic is tunneled, but ordinary HTTP traffic and gateway Basic credentials are visible on the network; restrict access using a firewall/VPN. The gateway fails closed on an empty pool. Detected HTTP upstream connection errors and HTTP CONNECT rejections remove the selected upstream; destination failures can also lead to eviction. proxy-chain does not expose every SOCKS failure or dropped tunnel, so the periodic revalidation is the fallback for those cases. Long-lived tunnels are not continuously health-checked and cannot be transparently retried.
+
+Docker bind-mounted `data` must be writable by the container's `node` user (usually UID 1000); `config` is mounted read-only. Adjust permissions before starting. `PROXY_PORT` and `API_PORT` changes also require changing compose port mappings. Protect both ports with firewall rules; the public health endpoint reveals operational metrics. API key and proxy Basic authentication are not encrypted without TLS.
+
+## Reverse proxy (API only)
+
+Terminate TLS for the management API; do **not** route the forward proxy through these examples. Configure DNS and certificates separately and restrict access to trusted clients. Example Nginx inside the same host:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name proxy-api.example.com;
+    ssl_certificate /etc/letsencrypt/live/proxy-api.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/proxy-api.example.com/privkey.pem;
+    location / { proxy_pass http://127.0.0.1:8000; proxy_set_header Host $host; }
+}
+```
+
+Caddy alternative:
+
+```caddy
+proxy-api.example.com {
+    reverse_proxy 127.0.0.1:8000
+}
+```
+
+## Tests
+
+Run `npm test`. Tests use local fixtures and do not depend on public feeds. The service requires external network access to fetch feeds, reach the echo service and connect to upstream proxies. Sources are community-maintained and can disappear or change format; test them before relying on them.
+
+### Real-network smoke test
+
+GitHub Actions runs a separate live smoke test against the actual feeds and sampled public proxies, then checks the API and makes a real HTTPS CONNECT request through the gateway. It can fail for reasons outside this project (feed outages, proxy churn, runner network restrictions, or echo service outages); inspect the run logs before treating a failure as a code regression. Run it locally with `node scripts/live-smoke.js` when outbound access is available; set `LIVE_SAMPLE_SIZE` (default 4000, maximum 20000) to adjust the sample. It sends traffic through untrusted public proxies and does not test every endpoint or guarantee future proxy availability.
