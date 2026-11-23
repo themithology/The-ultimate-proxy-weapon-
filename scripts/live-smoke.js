@@ -12,6 +12,12 @@ import { createApi } from '../src/apiServer.js';
 import http from 'node:http';
 
 const curl = promisify(execFile);
+const reportFatal = error => {
+  const message = String(error?.stack || error).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  console.error(`::error::${message}`); process.exit(1);
+};
+process.on('uncaughtException', reportFatal);
+process.on('unhandledRejection', reportFatal);
 const report = message => { console.log(message); if (process.env.GITHUB_ACTIONS) console.log(`::notice::${message}`); };
 let phase = 'starting';
 const deadline = setTimeout(() => { console.error(`::error::Live test exceeded 4 minutes during ${phase}`); process.exit(1); }, 240_000);
@@ -78,6 +84,8 @@ try {
     } catch (error) { console.warn(`Path fetch via ${candidate.protocol} failed: ${error.message}`); }
   }
   if (!pathSucceeded || !succeeded) throw new Error('Real-network gateway or path-based fetch failed');
+} catch (error) {
+  reportFatal(error);
 } finally {
   clearTimeout(deadline);
   if (api) await new Promise(resolve => api.close(resolve));
