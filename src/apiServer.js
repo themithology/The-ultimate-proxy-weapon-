@@ -20,6 +20,7 @@ export function createApi(pool, config, refresh) {
     if (!proxy) return res.status(503).json({ error: 'No healthy upstream proxies available' });
     return req.query.format === 'text' ? res.type('text').send(proxy.url) : res.json(proxy);
   });
+  app.get('/proxy/stats', (_req, res) => res.json(pool.list().map(proxy => ({ url: proxy.url, ...pool.getHealth(proxy.url) }))));
   app.get('/proxies.json', (_req, res) => res.json(pool.list()));
   app.get('/proxies.txt', (_req, res, next) => res.sendFile(path.resolve(pool.directory, 'proxies.txt'), err => { if (err) next(err); }));
   app.post('/refresh', (_req, res) => { if (!refresh()) return res.status(409).json({ error: 'A cycle is already running' }); res.status(202).json({ status: 'started' }); });

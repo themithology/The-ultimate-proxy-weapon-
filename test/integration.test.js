@@ -49,8 +49,12 @@ test('parse and fetch feeds, validate and serve rotating local proxies', async t
   // A forward-proxy request exercises the gateway and its upstream, end to end.
   const response = await new Promise((resolve, reject) => { const req = http.get({ host: '127.0.0.1', port: gatewayPort, path: `http://127.0.0.1:${echo.address().port}/`, headers: { 'Proxy-Authorization': `Basic ${Buffer.from('alice:secret').toString('base64')}` } }, res => { let body = ''; res.on('data', c => body += c); res.on('end', () => resolve({ status: res.statusCode, body })); }); req.on('error', reject); });
   assert.equal(response.status, 200); assert.equal(JSON.parse(response.body).ip, '127.0.0.1');
+  const beforeConnect = pool.list().reduce((sum, p) => sum + pool.getHealth(p.url).observations, 0);
   const curl = await promisify(execFile)('curl', ['--noproxy', '', '--max-time', '5', '--proxytunnel', '-x', `http://alice:secret@127.0.0.1:${gatewayPort}`, `http://127.0.0.1:${echo.address().port}/`]);
   assert.equal(JSON.parse(curl.stdout).ip, '127.0.0.1');
+  assert.equal(pool.list().reduce((sum, p) => sum + pool.getHealth(p.url).observations, 0), beforeConnect + 1);
+  const stats = await (await fetch(`${base}/proxy/stats`, { headers: { 'x-api-key': 'key' } })).json();
+  assert.equal(stats.length, 2);
   const first = pool.select(), second = pool.select(); assert.notEqual(first.url, second.url);
   await pool.replace([]); assert.match(await connect(gatewayPort, 'alice:secret'), /503/);
 });

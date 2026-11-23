@@ -2,8 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 export class ProxyPool {
-  constructor({ directory = 'data', rotation = 'round-robin' } = {}) {
+  constructor({ directory = 'data', rotation = 'round-robin', healthBaselineRequests = 5, healthWindow = 20, healthRetentionRatio = 0.5 } = {}) {
     this.directory = directory; this.rotation = rotation; this.proxies = []; this.index = 0;
+    this.healthBaselineRequests = healthBaselineRequests; this.healthWindow = healthWindow; this.healthRetentionRatio = healthRetentionRatio; this.health = new Map();
     this.lastScrape = null; this.revision = 0; this.evictions = new Map(); this.writeQueue = Promise.resolve();
   }
   async load() {
@@ -25,13 +26,44 @@ export class ProxyPool {
   }
   async replace(proxies) {
     this.proxies = [...proxies].sort ( (a, b) => a.latencyMs - b.latencyMs); this.index = 0;
+    const active = new Set(this.proxies.map(p => p.url));
+    for (const url of this.health.keys()) if (!active.has(url)) this.health.delete(url);
     await this.persist();
   }
   async remove(url) {
     if (!this.proxies.some(p => p.url === url)) return;
     this.evictions.set(url, ++this.revision);
+    this.health.delete(url);
     this.proxies = this.proxies.filter(p => p.url !== url);
     await this.persist();
+  }
+  getHealth(url) {
+    const stats = this.health.get(url);
+    if (!stats) return { observations: 0, baselineSuccessRate: null, recentSuccessRate: null };
+    return { observations: stats.observations, baselineSuccessRate: stats.baseline,
+      recentSuccessRate: stats.recent.reduce((sum, value) => sum + value, 0) / stats.recent.length };
+  }
+  recordOutcome(url, success) {
+    // Ignore requests that complete after their proxy has already been retired.
+    if (!this.proxies.some(p => p.url === url)) return;
+    const stats = this.health.get(url) ?? { observations: 0, baseline: null, initial: [], recent: [] };
+    stats.observations++;
+    stats.recent.push(success ? 1 : 0);
+    if (stats.recent.length > this.healthWindow) stats.recent.shift();
+    if (stats.baseline === null) {
+      stats.initial.push(success ? 1 : 0);
+      if (stats.initial.length === this.healthBaselineRequests) {
+        stats.baseline = stats.initial.reduce((sum, value) => sum + value, 0) / stats.initial.length;
+        stats.initial = [];
+      }
+    }
+    this.health.set(url, stats);
+    if (stats.baseline !== null && (stats.baseline === 0 ||
+        (stats.observations >= this.healthBaselineRequests + this.healthWindow &&
+         stats.recent.reduce((sum, value) => sum + value, 0) / stats.recent.length < stats.baseline * this.healthRetentionRatio))) {
+      console.log(`Retiring proxy due to degraded request success rate: ${url}`);
+      this.remove(url).catch(error => console.error('Failed to persist pool:', error));
+    }
   }
   persist() {
     const snapshot = this.list();

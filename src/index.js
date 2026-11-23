@@ -7,7 +7,7 @@ import { createProxyServer } from './proxyServer.js';
 import { createApi } from './apiServer.js';
 
 const config = loadConfig();
-const pool = new ProxyPool({ rotation: config.rotation });
+const pool = new ProxyPool({ rotation: config.rotation, healthBaselineRequests: config.healthBaselineRequests, healthWindow: config.healthWindow, healthRetentionRatio: config.healthRetentionRatio });
 await pool.load();
 let busy = false;
 function cycle(scrape) {

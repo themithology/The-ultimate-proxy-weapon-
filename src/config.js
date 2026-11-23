@@ -5,6 +5,11 @@ const number = (name, fallback, min, max) => {
   if (!Number.isInteger(value) || value < min || value > max) throw new Error(`Invalid ${name}: expected integer ${min}-${max}`);
   return value;
 };
+const ratio = (name, fallback) => {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(value) || value <= 0 || value > 1) throw new Error(`Invalid ${name}: expected number > 0 and <= 1`);
+  return value;
+};
 export function loadConfig() {
   const required = name => {
     const value = process.env[name];
@@ -18,5 +23,7 @@ export function loadConfig() {
   return { proxyUser: required('PROXY_USER'), proxyPass: required('PROXY_PASS'), apiKey: required('API_KEY'),
     host: process.env.HOST || '0.0.0.0', proxyPort: number('PROXY_PORT', 8080, 1, 65535), apiPort: number('API_PORT', 8000, 1, 65535),
     rotation, concurrency: number('VALIDATION_CONCURRENCY', 300, 1, 500), timeout: number('VALIDATION_TIMEOUT_MS', 4000, 100, 60000),
+    healthBaselineRequests: number('HEALTH_BASELINE_REQUESTS', 5, 1, 100), healthWindow: number('HEALTH_WINDOW', 20, 1, 1000),
+    healthRetentionRatio: ratio('HEALTH_RETENTION_RATIO', 0.5),
     scrapeTimeout: number('SCRAPE_TIMEOUT_MS', 10000, 100, 60000), echoUrl };
 }
