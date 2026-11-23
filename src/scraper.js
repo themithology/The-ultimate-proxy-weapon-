@@ -29,9 +29,8 @@ export async function scrapeSources({ sourcesPath = 'config/sources.json', timeo
       timer = setTimeout(() => { controller.abort(); reject(new Error(`Timeout after ${timeout}ms`)); }, timeout);
     });
     const fetchSource = async () => {
-      const response = await fetchImpl(source.url, { signal: controller.signal, redirect: 'follow' });
+      const response = await fetchImpl(source.url, { signal: controller.signal, redirect: 'manual' });
       if (!response.ok) {
-        if (response.status === 404 || response.status === 410) sourceCooldowns.set(source.url, Date.now() + missingCooldownMs);
         throw new Error(`HTTP ${response.status}`);
       }
       sourceCooldowns.delete(source.url);
@@ -51,6 +50,9 @@ export async function scrapeSources({ sourcesPath = 'config/sources.json', timeo
       const entries = await Promise.race([fetchSource(), deadline]);
       successes++;
       return entries;
+    } catch (error) {
+      sourceCooldowns.set(source.url, Date.now() + missingCooldownMs);
+      throw error;
     } finally {
       clearTimeout(timer); controller.abort(); completed++;
       onProgress({ completed, total: sources.length, successes });

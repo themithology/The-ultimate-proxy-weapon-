@@ -7,7 +7,7 @@ import { createProxyServer } from './proxyServer.js';
 import { createApi } from './apiServer.js';
 
 const config = loadConfig();
-const pool = new ProxyPool({ rotation: config.rotation, healthBaselineRequests: config.healthBaselineRequests, healthWindow: config.healthWindow, healthRetentionRatio: config.healthRetentionRatio });
+const pool = new ProxyPool({ rotation: config.rotation, healthBaselineRequests: config.healthBaselineRequests, healthWindow: config.healthWindow, healthRetentionRatio: config.healthRetentionRatio, maxSize: config.maxPoolSize, cooldownMs: config.proxyCooldownMs });
 await pool.load();
 let busy = false;
 const cursorBySource = new Map();

@@ -27,6 +27,8 @@ export function createFetchHandler(pool, { timeout = 20000, maxBytes = 10 * 1024
       agent = upstream.protocol.startsWith('socks') ? new SocksProxyAgent(upstream.url, { timeout }) : new HttpsProxyAgent(upstream.url);
       const response = await axios.get(target.href, { httpAgent: agent, httpsAgent: agent, proxy: false, responseType: 'stream',
         signal: controller.signal, timeout, maxRedirects: 0, validateStatus: () => true });
+      if (response.status < 200 || response.status >= 300)
+        pool.remove(upstream.url).catch(error => console.error('Failed to persist pool:', error));
       res.status(response.status);
       // Do not forward cookies, redirects, or arbitrary origin headers onto the dashboard domain.
       if (response.headers['content-type']) res.set('Content-Type', response.headers['content-type']);
@@ -39,9 +41,9 @@ export function createFetchHandler(pool, { timeout = 20000, maxBytes = 10 * 1024
       }});
       await pipeline(response.data, limiter, res);
       observed = true;
-      pool.recordOutcome(upstream.url, response.status < 500 && response.status !== 429);
+      if (response.status >= 200 && response.status < 300) pool.recordOutcome(upstream.url, true);
     } catch (error) {
-      if (!observed && !clientGone && !res.writableFinished) pool.recordOutcome(upstream.url, false);
+      if (!observed && !clientGone && !res.writableFinished) pool.remove(upstream.url).catch(e => console.error('Failed to persist pool:', e));
       if (!res.headersSent && !res.destroyed) res.status(502).json({ error: 'Proxy fetch failed or timed out' });
       else if (!res.writableFinished) res.destroy();
       console.warn(`Fetch failed through ${upstream.protocol}: ${error.message}`);

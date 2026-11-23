@@ -19,12 +19,14 @@ test('baseline and rolling window retire degraded proxies and persist removal', 
   pool.recordOutcome(item.url, false);
   assert.equal(pool.list().length, 0); await pool.writeQueue;
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(directory, 'proxies.json'), 'utf8')), []);
+  await pool.replace([item]); assert.equal(pool.list().length, 0, 'retired proxy remains quarantined');
+  pool.retiredUntil.set(item.url, 0);
   await pool.replace([item]); assert.equal(pool.getHealth(item.url).observations, 0);
   for (let i = 0; i < 3; i++) pool.recordOutcome(item.url, false);
   assert.equal(pool.list().length, 0, 'zero baseline retires proxy'); await pool.writeQueue;
 });
 
-test('gateway records actual HTTP status outcomes and retires degraded upstream', async t => {
+test('gateway immediately retires an upstream on a non-2xx response', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gateway-health-')); t.after(() => fs.rm(directory, { recursive: true, force: true }));
   let status = 200;
   const target = http.createServer((_req, res) => { res.statusCode = status; res.end('result'); });
@@ -42,7 +44,6 @@ test('gateway records actual HTTP status outcomes and retires degraded upstream'
   }
   assert.equal(await request(), 200); assert.equal(await request(), 200);
   assert.equal(pool.getHealth(url).baselineSuccessRate, 1);
-  status = 503; assert.equal(await request(), 503); assert.equal(pool.list().length, 1);
-  assert.equal(await request(), 503); assert.equal(pool.list().length, 0); await pool.writeQueue;
+  status = 503; assert.equal(await request(), 503); assert.equal(pool.list().length, 0); await pool.writeQueue;
   assert.equal(await request(), 503);
 });

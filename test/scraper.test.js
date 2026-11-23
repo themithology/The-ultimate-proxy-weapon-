@@ -37,7 +37,7 @@ test('successive limited refreshes advance each source cursor', async t => {
   assert.deepEqual((await scrapeSources(options)).proxies.map(p => p.host), ['1.1.1.3', '1.1.1.4']);
 });
 
-test('missing feeds are temporarily skipped on later scrapes and then retried', async t => {
+test('non-success feeds are temporarily skipped on later scrapes and then retried', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'source-404-')); t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const sourcesPath = path.join(directory, 'sources.json'); const url = 'http://missing.test';
   await fs.writeFile(sourcesPath, JSON.stringify([{ url, protocol: 'http' }]));
@@ -47,4 +47,18 @@ test('missing feeds are temporarily skipped on later scrapes and then retried', 
   assert.equal((await scrapeSources(options)).successes, 0); assert.equal(calls, 1);
   sourceCooldowns.set(url, Date.now() - 1);
   await scrapeSources(options); assert.equal(calls, 2);
+});
+
+
+test('a non-2xx response is cooled down instead of repeatedly fetched', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'source-500-')); t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const sourcesPath = path.join(directory, 'sources.json'); const url = 'http://broken.test';
+  await fs.writeFile(sourcesPath, JSON.stringify([{ url, protocol: 'http' }]));
+  let calls = 0; const sourceCooldowns = new Map();
+  const options = { sourcesPath, sourceCooldowns, fetchImpl: async () => { calls++; return new Response('', { status: 500 }); } };
+  await scrapeSources(options); await scrapeSources(options); assert.equal(calls, 1);
+  const redirectOptions = { ...options, sourceCooldowns: new Map(), fetchImpl: async (_url, requestOptions) => {
+    assert.equal(requestOptions.redirect, 'manual'); return new Response('', { status: 302 });
+  } };
+  assert.equal((await scrapeSources(redirectOptions)).successes, 0);
 });

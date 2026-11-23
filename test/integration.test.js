@@ -25,7 +25,7 @@ function connect(port, auth) { return new Promise((resolve, reject) => {
 
 test('parse and fetch feeds, validate and serve rotating local proxies', async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'proxy-test-')); t.after(() => fs.rm(dir, { recursive: true, force: true }));
-  const echo = http.createServer((req, res) => { if (req.url === '/missing') res.statusCode = 404; res.end(JSON.stringify({ ip: '127.0.0.1' })); }); await listen(echo); t.after(() => close(echo));
+  const echo = http.createServer((req, res) => { if (req.url === '/missing') res.statusCode = 404; if (req.url === '/redirect') res.statusCode = 302; res.end(JSON.stringify({ ip: '127.0.0.1' })); }); await listen(echo); t.after(() => close(echo));
   const upstream = new Server({ host: '127.0.0.1', port: 0 }); await upstream.listen(); t.after(() => upstream.close(true));
   const upstream2 = new Server({ host: '127.0.0.1', port: 0 }); await upstream2.listen(); t.after(() => upstream2.close(true));
   const a = upstream.server.address().port, b = upstream2.server.address().port;
@@ -59,8 +59,6 @@ test('parse and fetch feeds, validate and serve rotating local proxies', async t
   assert.equal((await fetch(`${base}/fetch?url=invalid`, { headers: { 'x-api-key': 'key' } })).status, 400);
   const fetched = await fetch(`${base}/fetch?url=${encodeURIComponent(targetUrl)}`, { headers: { 'x-api-key': 'key' } });
   assert.equal(fetched.status, 200); assert.equal((await fetched.json()).ip, '127.0.0.1');
-  const missing = await fetch(`${base}/fetch?url=${encodeURIComponent(targetUrl + 'missing')}`, { headers: { 'x-api-key': 'key' } });
-  assert.equal(missing.status, 404); assert.equal(pool.list().length, 2, 'target 404 must not evict a proxy');
   assert.equal((await (await fetch(`${base}/proxies.json`, { headers: { 'x-api-key': 'key' } })).json()).length, 2);
   assert.equal((await fetch(`${base}/refresh`, { method: 'POST', headers: { 'x-api-key': 'key' } })).status, 202);
   // A forward-proxy request exercises the gateway and its upstream, end to end.
@@ -73,5 +71,9 @@ test('parse and fetch feeds, validate and serve rotating local proxies', async t
   const stats = await (await fetch(`${base}/proxy/stats`, { headers: { 'x-api-key': 'key' } })).json();
   assert.equal(stats.length, 2);
   const first = pool.select(), second = pool.select(); assert.notEqual(first.url, second.url);
+  const missing = await fetch(`${base}/fetch?url=${encodeURIComponent(targetUrl + 'missing')}`, { headers: { 'x-api-key': 'key' } });
+  assert.equal(missing.status, 404); assert.equal(pool.list().length, 1, 'non-2xx should retire the selected proxy');
+  const redirect = await fetch(`${base}/fetch?url=${encodeURIComponent(targetUrl + 'redirect')}`, { headers: { 'x-api-key': 'key' }, redirect: 'manual' });
+  assert.equal(redirect.status, 302); assert.equal(pool.list().length, 0, 'redirects also retire the selected proxy');
   await pool.replace([]); assert.match(await connect(gatewayPort, 'alice:secret'), /503/);
 });

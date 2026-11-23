@@ -1,6 +1,6 @@
 const $ = selector => document.querySelector(selector);
 const colors = { http: '#c6f279', https: '#88b970', socks4: '#779c82', socks5: '#4f786e' };
-let state = { proxies: [], filter: 'all', query: '', data: null };
+let state = { proxies: [], filter: 'all', query: '', data: null, shown: 200 };
 let showingCycleError = false;
 const number = value => new Intl.NumberFormat().format(value);
 const svgCopy = '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>';
@@ -56,7 +56,7 @@ function render() {
 function renderTable() {
   const filtered = state.proxies.filter(p => (state.filter === 'all' || p.protocol === state.filter) && p.url.toLowerCase().includes(state.query));
   const rows = $('#proxy-rows'); rows.replaceChildren();
-  for (const p of filtered.slice(0, 200)) {
+  for (const p of filtered.slice(0, state.shown)) {
     const tr = document.createElement('tr');
     const cell = (text, className) => { const td = document.createElement('td'); td.textContent = text; if (className) td.className = className; tr.append(td); return td; };
     cell(p.url, 'address'); const proto = cell(''); const tag = document.createElement('span'); tag.className = 'protocol'; tag.textContent = p.protocol; proto.append(tag);
@@ -69,7 +69,8 @@ function renderTable() {
     empty.querySelector('strong').textContent = state.proxies.length ? 'No proxies match your search' : 'No proxies in your pool yet';
     empty.querySelector('p').textContent = state.proxies.length ? 'Try another protocol or search term.' : 'Your first scan runs automatically. Validated proxies will show up here as they’re found.';
   }
-  $('#showing').textContent = `Showing ${number(Math.min(filtered.length, 200))} of ${number(filtered.length)} proxies`;
+  $('#load-more').hidden = filtered.length <= state.shown;
+  $('#showing').textContent = `Showing ${number(Math.min(filtered.length, state.shown))} of ${number(filtered.length)} proxies`;
 }
 async function update() {
   try {
@@ -77,13 +78,14 @@ async function update() {
     state.data = await response.json(); state.proxies = state.data.proxies || []; $('#connection-status').textContent = 'SYSTEM ONLINE'; $('.top-right .live-dot').style.background = ''; render();
   } catch { $('#connection-status').textContent = 'CONNECTION LOST'; $('.top-right .live-dot').style.background = '#e39183'; }
 }
-for (const tab of document.querySelectorAll('.tab')) tab.addEventListener('click', () => { state.filter = tab.dataset.filter; document.querySelectorAll('.tab').forEach(item => item.classList.toggle('active', item === tab)); renderTable(); });
-$('#search').addEventListener('input', event => { state.query = event.target.value.trim().toLowerCase(); renderTable(); });
+for (const tab of document.querySelectorAll('.tab')) tab.addEventListener('click', () => { state.filter = tab.dataset.filter; state.shown = 200; document.querySelectorAll('.tab').forEach(item => item.classList.toggle('active', item === tab)); renderTable(); });
+$('#search').addEventListener('input', event => { state.query = event.target.value.trim().toLowerCase(); state.shown = 200; renderTable(); });
 $('#refresh').addEventListener('click', async () => {
   const button = $('#refresh'); button.disabled = true;
   try { const response = await fetch('/dashboard/refresh', { method: 'POST' }); if (response.status === 409) showNotice('A refresh or revalidation is already in progress.'); else if (!response.ok) throw new Error(`HTTP ${response.status}`); else showNotice('Refresh started. New proxies will appear as they are validated.'); await update(); }
   catch { showNotice('Could not start refresh. Please try again.', true); button.disabled = false; }
 });
+$('#load-more').addEventListener('click', () => { state.shown += 200; renderTable(); });
 $('#copy-gateway').addEventListener('click', () => copy($('#gateway-address').textContent));
 function clock() { $('#clock').textContent = `${new Date().toISOString().slice(11, 19)} UTC`; }
 clock(); setInterval(clock, 1000); update(); setInterval(update, 5000);

@@ -36,7 +36,10 @@ export function createProxyServer(pool, config) {
     // Returning a falsy upstream would accidentally make this an open direct proxy.
     if (!upstream) throw new RequestError('No healthy upstream proxies available', 503);
     selected.set(request, upstream.url);
-    if (request.method === 'CONNECT') observeConnect(request.socket, success => pool.recordOutcome(upstream.url, success));
+    if (request.method === 'CONNECT') observeConnect(request.socket, success => {
+      if (success) pool.recordOutcome(upstream.url, true);
+      else pool.remove(upstream.url).catch(e => console.error('Failed to persist pool:', e));
+    });
     const evict = () => pool.remove(upstream.url).catch(e => console.error('Failed to persist pool:', e));
     // proxy-chain does not emit requestFailed for all HTTP upstream socket errors.
     const Agent = upstream.protocol === 'https' ? https.Agent : http.Agent;
@@ -58,7 +61,8 @@ export function createProxyServer(pool, config) {
   server.server.on('request', (request, response) => {
     response.once('finish', () => {
       const url = selected.get(request);
-      if (url) pool.recordOutcome(url, response.statusCode < 500 && response.statusCode !== 429);
+      if (url && response.statusCode >= 200 && response.statusCode < 300) pool.recordOutcome(url, true);
+      else if (url) pool.remove(url).catch(e => console.error('Failed to persist pool:', e));
     });
   });
   server.on('tunnelConnectFailed', ({ customTag }) => { if (customTag) pool.remove(customTag).catch(e => console.error('Failed to persist pool:', e)); });

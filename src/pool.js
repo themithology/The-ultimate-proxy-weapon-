@@ -2,8 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 export class ProxyPool {
-  constructor({ directory = 'data', rotation = 'round-robin', healthBaselineRequests = 5, healthWindow = 20, healthRetentionRatio = 0.5 } = {}) {
+  constructor({ directory = 'data', rotation = 'round-robin', healthBaselineRequests = 5, healthWindow = 20, healthRetentionRatio = 0.5, maxSize = 9999, cooldownMs = 3600000 } = {}) {
     this.directory = directory; this.rotation = rotation; this.proxies = []; this.index = 0;
+    this.maxSize = maxSize; this.cooldownMs = cooldownMs; this.retiredUntil = new Map();
     this.healthBaselineRequests = healthBaselineRequests; this.healthWindow = healthWindow; this.healthRetentionRatio = healthRetentionRatio; this.health = new Map();
     this.lastScrape = null; this.revision = 0; this.evictions = new Map(); this.writeQueue = Promise.resolve();
   }
@@ -12,7 +13,7 @@ export class ProxyPool {
     try {
       const items = JSON.parse(await fs.readFile(path.join(this.directory, 'proxies.json'), 'utf8'));
       if (!Array.isArray(items)) throw new Error('Invalid pool file');
-      this.proxies = items.filter(item => item && typeof item.url === 'string' && ['http', 'https', 'socks4', 'socks5'].includes(item.protocol));
+      this.proxies = items.filter(item => item && typeof item.url === 'string' && ['http', 'https', 'socks4', 'socks5'].includes(item.protocol)).sort((a, b) => a.latencyMs - b.latencyMs).slice(0, this.maxSize);
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
     await this.persist();
   }
@@ -25,7 +26,9 @@ export class ProxyPool {
     return candidates[this.index++ % candidates.length];
   }
   async replace(proxies) {
-    this.proxies = [...proxies].sort ( (a, b) => a.latencyMs - b.latencyMs); this.index = 0;
+    const now = Date.now();
+    for (const [url, until] of this.retiredUntil) if (until <= now) this.retiredUntil.delete(url);
+    this.proxies = [...new Map(proxies.filter(p => !this.retiredUntil.has(p.url)).map(p => [p.url, p])).values()].sort((a, b) => a.latencyMs - b.latencyMs).slice(0, this.maxSize); this.index = 0;
     const active = new Set(this.proxies.map(p => p.url));
     for (const url of this.health.keys()) if (!active.has(url)) this.health.delete(url);
     await this.persist();
@@ -33,6 +36,7 @@ export class ProxyPool {
   async remove(url) {
     if (!this.proxies.some(p => p.url === url)) return;
     this.evictions.set(url, ++this.revision);
+    this.retiredUntil.set(url, Date.now() + this.cooldownMs);
     this.health.delete(url);
     this.proxies = this.proxies.filter(p => p.url !== url);
     await this.persist();

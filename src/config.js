@@ -28,6 +28,7 @@ export function loadConfig() {
   return { proxyUser: required('PROXY_USER'), proxyPass: required('PROXY_PASS'), apiKey: required('API_KEY'),
     host: process.env.HOST || '0.0.0.0', proxyHost: process.env.PROXY_HOST || process.env.HOST || '0.0.0.0', proxyPort: number('PROXY_PORT', 8080, 1, 65535), apiPort: number('API_PORT', process.env.SERVER_PORT || 8000, 1, 65535),
     rotation, scrapeIntervalSeconds, maxCandidates: number('MAX_CANDIDATES', 20000, 1, 1000000), concurrency: number('VALIDATION_CONCURRENCY', 500, 1, 500), timeout: number('VALIDATION_TIMEOUT_MS', 4000, 100, 60000),
+    maxPoolSize: number('POOL_MAX_SIZE', 9999, 1, 9999), proxyCooldownMs: number('PROXY_COOLDOWN_SECONDS', 3600, 1, 86400) * 1000,
     healthBaselineRequests: number('HEALTH_BASELINE_REQUESTS', 5, 1, 100), healthWindow: number('HEALTH_WINDOW', 20, 1, 1000),
     healthRetentionRatio: ratio('HEALTH_RETENTION_RATIO', 0.5),
     scrapeTimeout: number('SCRAPE_TIMEOUT_MS', 10000, 100, 60000), echoUrl };
