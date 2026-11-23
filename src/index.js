@@ -11,6 +11,7 @@ const pool = new ProxyPool({ rotation: config.rotation, healthBaselineRequests: 
 await pool.load();
 let busy = false;
 const cursorBySource = new Map();
+const sourceCooldowns = new Map();
 const cycleStatus = { busy: false, type: null, startedAt: null, lastCompletedAt: null, error: null };
 function cycle(scrape) {
   if (busy) return false;
@@ -20,7 +21,7 @@ function cycle(scrape) {
     const revision = pool.revision;
     let candidates = pool.list();
     if (scrape) {
-      const result = await scrapeSources({ timeout: config.scrapeTimeout, limit: config.maxCandidates, cursorBySource,
+      const result = await scrapeSources({ timeout: config.scrapeTimeout, limit: config.maxCandidates, cursorBySource, sourceCooldowns,
         onProgress: ({ completed, total, successes }) => Object.assign(cycleStatus, { sourcesCompleted: completed, sourcesTotal: total, sourcesSucceeded: successes }) });
       pool.lastScrape = new Date().toISOString();
       // A feed outage must not erase a previously usable pool.

@@ -4,6 +4,7 @@ import cors from 'cors';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { safeEqual } from './proxyServer.js';
+import { createFetchHandler } from './fetchEndpoint.js';
 
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
 
@@ -33,6 +34,7 @@ export function createApi(pool, config, refresh, getCycleStatus = () => ({ busy:
     res.status(202).json({ status: 'started' });
   });
   app.use((req, res, next) => safeEqual(req.get('x-api-key'), config.apiKey) ? next() : res.status(401).json({ error: 'Invalid API key' }));
+  app.get('/fetch', createFetchHandler(pool));
   app.get('/proxy/random', (req, res) => {
     const protocol = req.query.protocol;
     if (protocol && !['http', 'https', 'socks4', 'socks5'].includes(protocol)) return res.status(400).json({ error: 'Invalid protocol' });

@@ -14,11 +14,15 @@ export function parseFeed(text, defaultProtocol) {
   }
   return result;
 }
-export async function scrapeSources({ sourcesPath = 'config/sources.json', timeout = 10000, fetchImpl = fetch, limit = Infinity, onProgress = () => {}, cursorBySource = new Map() } = {}) {
+export async function scrapeSources({ sourcesPath = 'config/sources.json', timeout = 10000, fetchImpl = fetch, limit = Infinity, onProgress = () => {}, cursorBySource = new Map(), sourceCooldowns = new Map(), missingCooldownMs = 3600000 } = {}) {
   const sources = JSON.parse(await fs.readFile(sourcesPath, 'utf8'));
   if (!Array.isArray(sources)) throw new Error('sources.json must contain an array');
   let completed = 0, successes = 0;
   const settled = await Promise.allSettled(sources.map(async source => {
+    if ((sourceCooldowns.get(source.url) ?? 0) > Date.now()) {
+      completed++; onProgress({ completed, total: sources.length, successes });
+      return [];
+    }
     const controller = new AbortController();
     let timer;
     const deadline = new Promise((_, reject) => {
@@ -26,7 +30,11 @@ export async function scrapeSources({ sourcesPath = 'config/sources.json', timeo
     });
     const fetchSource = async () => {
       const response = await fetchImpl(source.url, { signal: controller.signal, redirect: 'follow' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 410) sourceCooldowns.set(source.url, Date.now() + missingCooldownMs);
+        throw new Error(`HTTP ${response.status}`);
+      }
+      sourceCooldowns.delete(source.url);
       const reader = response.body.getReader(); let size = 0, chunks = [];
       try {
         while (true) {

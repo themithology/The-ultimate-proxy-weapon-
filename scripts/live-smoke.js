@@ -66,6 +66,18 @@ try {
     } catch (error) { console.warn(`Gateway attempt via ${candidate.protocol} failed: ${error.message.split('\n')[0]}`); }
   }
   if (!succeeded) throw new Error('No validated proxy completed a real gateway CONNECT');
+  phase = 'testing path-based fetch'; report(`Live test: ${phase}`);
+  let pathSucceeded = false;
+  for (const candidate of verified.slice(0, 5)) {
+    await pool.replace([candidate]);
+    try {
+      const response = await fetch(`${base}/fetch?url=${encodeURIComponent('https://api.ipify.org?format=json')}`, { headers: { 'x-api-key': 'live-test' }, signal: AbortSignal.timeout(12000) });
+      if (!response.ok || (await response.json()).ip !== candidate.host) throw new Error(`Unexpected fetch result: HTTP ${response.status}`);
+      report(`Live path-based fetch succeeded through ${candidate.protocol} proxy; exit IP matched.`);
+      pathSucceeded = true; break;
+    } catch (error) { console.warn(`Path fetch via ${candidate.protocol} failed: ${error.message}`); }
+  }
+  if (!pathSucceeded) throw new Error('No validated proxy completed a real path-based fetch');
 } finally {
   clearTimeout(deadline);
   if (api) await new Promise(resolve => api.close(resolve));

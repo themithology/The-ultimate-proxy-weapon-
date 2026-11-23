@@ -36,3 +36,15 @@ test('successive limited refreshes advance each source cursor', async t => {
   assert.deepEqual((await scrapeSources(options)).proxies.map(p => p.host), ['1.1.1.1', '1.1.1.2']);
   assert.deepEqual((await scrapeSources(options)).proxies.map(p => p.host), ['1.1.1.3', '1.1.1.4']);
 });
+
+test('missing feeds are temporarily skipped on later scrapes and then retried', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'source-404-')); t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const sourcesPath = path.join(directory, 'sources.json'); const url = 'http://missing.test';
+  await fs.writeFile(sourcesPath, JSON.stringify([{ url, protocol: 'http' }]));
+  let calls = 0; const sourceCooldowns = new Map();
+  const options = { sourcesPath, sourceCooldowns, missingCooldownMs: 60000, fetchImpl: async () => { calls++; return new Response('', { status: 404 }); } };
+  assert.equal((await scrapeSources(options)).successes, 0); assert.equal(calls, 1);
+  assert.equal((await scrapeSources(options)).successes, 0); assert.equal(calls, 1);
+  sourceCooldowns.set(url, Date.now() - 1);
+  await scrapeSources(options); assert.equal(calls, 2);
+});

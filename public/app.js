@@ -50,7 +50,7 @@ function render() {
     showingCycleError = true;
   } else if (data.cycle?.error) { showNotice(`Last cycle failed: ${data.cycle.error}`, true); showingCycleError = true; }
   else if (showingCycleError) { $('#notice').hidden = true; showingCycleError = false; }
-  $('#gateway-address').textContent = `http://YOUR_USER:YOUR_PASS@YOUR_HOST:${data.proxyPort || 8080}`;
+  $('#gateway-address').textContent = `${location.origin}/fetch?url=https%3A%2F%2Fexample.com`;
   renderTable();
 }
 function renderTable() {

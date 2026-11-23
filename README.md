@@ -68,3 +68,17 @@ GitHub Actions runs a separate live smoke test against the actual feeds and samp
 Requests use the configured `ROTATION_MODE` (`round-robin`, `random`, or `lowest-latency`). The pool keeps an in-memory rolling success history for each active proxy. Its first `HEALTH_BASELINE_REQUESTS` observations (default 5) set the initial success rate; a zero baseline retires it immediately. After a further `HEALTH_WINDOW` observations (default 20), the proxy is retired if the most recent window's success rate is below the baseline multiplied by `HEALTH_RETENTION_RATIO` (default 0.5). For example, an initial 100% rate and a recent rate below 50% triggers retirement. This avoids judging a proxy from just one target response. A subsequent refresh can re-add it if it passes validation. Detected connection failures may still evict immediately. Stats are reset on restart or retirement and are available at `GET /proxy/stats` with the API key.
 
 For plain HTTP, completed responses below 500 count as successful except 429; 429 and 5xx count as failures. They can reflect the target's behavior rather than the proxy's. For HTTPS the gateway sees the CONNECT response, not the encrypted HTTP responses inside the tunnel, so only tunnel establishment can contribute to these stats; successful CONNECT does not mean the scraper received a successful page. Client cancellations without a completed response are not counted. If application-level HTTPS response rates matter, record them in your scraper and use a separate feedback mechanism; the proxy cannot see them automatically.
+
+## Path-based scraper endpoint (one panel allocation)
+
+`GET /fetch?url=ENCODED_TARGET_URL` makes an HTTP(S) GET through a proxy selected from the verified pool. It is a normal HTTP API served on the **dashboard/API port**, not a standard forward proxy URL; clients must call this endpoint explicitly. Include your existing API key:
+
+```sh
+curl --get -H 'x-api-key: YOUR_API_KEY' \
+  --data-urlencode 'url=https://example.com/' \
+  'http://YOUR_PANEL_ADDRESS:PRIMARY_PORT/fetch'
+```
+
+The dashboard displays the endpoint based on the address used to open it. The response body and HTTP status come from the target; a target's 404 does not mean the feed or proxy URL is broken. Redirects are not followed; their location is returned in `X-Upstream-Location`. Only GET is supported; cookies and request headers are not forwarded. Responses are capped at 10 MiB, requests at 20 seconds and concurrent fetches at 50. An empty pool returns 503; a network failure returns 502 when possible. Public proxies may fail or be untrusted. This API cannot be used as `curl -x http://host/fetch`; normal HTTP/HTTPS forward proxy clients require a separate reachable proxy port (or a host-provided TCP/CONNECT proxy service). Keep the API key private and restrict network access; this endpoint can request arbitrary URLs through upstream proxies.
+
+Feeds returning HTTP 404 or 410 are skipped for one hour before retrying. Temporary failures such as timeouts and HTTP 5xx are not permanently removed. Feed availability can depend on your hosting provider's network.
