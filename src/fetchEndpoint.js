@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import { BoundedHttpProxyAgent } from './httpProxyAgent.js';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -24,7 +24,7 @@ export function createFetchHandler(pool, { timeout = 20000, maxBytes = 10 * 1024
     res.once('close', abortOnClose);
     let agent, observed = false;
     try {
-      agent = upstream.protocol.startsWith('socks') ? new SocksProxyAgent(upstream.url, { timeout }) : new HttpsProxyAgent(upstream.url);
+      agent = upstream.protocol.startsWith('socks') ? new SocksProxyAgent(upstream.url, { timeout }) : new BoundedHttpProxyAgent(upstream.url, { timeout });
       const response = await axios.get(target.href, { httpAgent: agent, httpsAgent: agent, proxy: false, responseType: 'stream',
         signal: controller.signal, timeout, maxRedirects: 0, validateStatus: () => true });
       if (response.status < 200 || response.status >= 300)

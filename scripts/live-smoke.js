@@ -65,7 +65,7 @@ try {
       succeeded = true; break;
     } catch (error) { console.warn(`Gateway attempt via ${candidate.protocol} failed: ${error.message.split('\n')[0]}`); }
   }
-  if (!succeeded) throw new Error('No validated proxy completed a real gateway CONNECT');
+  if (!succeeded) report('No sampled proxy completed gateway CONNECT; continuing to test path-based fetch independently.');
   phase = 'testing path-based fetch'; report(`Live test: ${phase}`);
   let pathSucceeded = false;
   for (const candidate of verified.slice(0, 5)) {
@@ -77,7 +77,7 @@ try {
       pathSucceeded = true; break;
     } catch (error) { console.warn(`Path fetch via ${candidate.protocol} failed: ${error.message}`); }
   }
-  if (!pathSucceeded) throw new Error('No validated proxy completed a real path-based fetch');
+  if (!pathSucceeded || !succeeded) throw new Error('Real-network gateway or path-based fetch failed');
 } finally {
   clearTimeout(deadline);
   if (api) await new Promise(resolve => api.close(resolve));

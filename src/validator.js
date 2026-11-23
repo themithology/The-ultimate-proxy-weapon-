@@ -1,12 +1,12 @@
 import axios from 'axios';
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import { BoundedHttpProxyAgent } from './httpProxyAgent.js';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import pLimit from 'p-limit';
 
 export async function validateProxy(proxy, { echoUrl = 'https://api.ipify.org?format=json', timeout = 4000 } = {}) {
   const started = performance.now(); let agent;
   try {
-    agent = proxy.protocol.startsWith('socks') ? new SocksProxyAgent(proxy.url, { timeout }) : new HttpsProxyAgent(proxy.url);
+    agent = proxy.protocol.startsWith('socks') ? new SocksProxyAgent(proxy.url, { timeout }) : new BoundedHttpProxyAgent(proxy.url, { timeout });
     const response = await axios.get(echoUrl, { httpAgent: agent, httpsAgent: agent, proxy: false, timeout, signal: AbortSignal.timeout(timeout), maxRedirects: 0, maxContentLength: 65536 });
     const ip = typeof response.data === 'string' ? response.data.trim() : (response.data.ip ?? response.data.origin);
     // This checks the observed exit address, not all possible header leaks or identity linkage.
@@ -15,13 +15,29 @@ export async function validateProxy(proxy, { echoUrl = 'https://api.ipify.org?fo
   } catch { return null; } finally { agent?.destroy(); }
 }
 export async function validateProxies(proxies, options = {}) {
-  const concurrency = options.concurrency ?? 300, limit = pLimit(concurrency), valid = [];
-  // Only create one batch of promises at a time rather than queueing every endpoint.
-  for (let i = 0; i < proxies.length; i += concurrency) {
-    const batch = await Promise.all(proxies.slice(i, i + concurrency).map(proxy => limit(() => validateProxy(proxy, options))));
-    const passed = batch.filter(Boolean);
-    valid.push(...passed);
-    if (options.onBatch) await options.onBatch(passed, batch.length);
+  const concurrency = options.concurrency ?? 500, limit = pLimit(concurrency), valid = [];
+  const check = options.checkProxy ?? validateProxy;
+  const batchSize = options.progressBatchSize ?? 100;
+  let next = 0, pendingCount = 0, pending = [], flushChain = Promise.resolve();
+  function flush() {
+    if (!pendingCount) return flushChain;
+    const batch = pending, checked = pendingCount; pending = []; pendingCount = 0;
+    if (options.onBatch) flushChain = flushChain.then(() => options.onBatch(batch, checked));
+    return flushChain;
   }
+  // Each worker immediately takes another item when its check finishes; a single
+  // slow proxy no longer holds an entire batch hostage. Only O(concurrency)
+  // promises are active, even for very large lists.
+  const workers = Array.from({ length: Math.min(concurrency, proxies.length) }, async () => {
+    while (next < proxies.length) {
+      const proxy = proxies[next++];
+      const result = await limit(() => check(proxy, options)).catch(() => null);
+      if (result) { valid.push(result); pending.push(result); }
+      pendingCount++;
+      if (pendingCount >= batchSize) await flush();
+    }
+  });
+  await Promise.all(workers);
+  await flush();
   return valid.sort((a, b) => a.latencyMs - b.latencyMs);
 }

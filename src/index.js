@@ -16,7 +16,7 @@ const cycleStatus = { busy: false, type: null, startedAt: null, lastCompletedAt:
 function cycle(scrape) {
   if (busy) return false;
   busy = true;
-  Object.assign(cycleStatus, { busy: true, type: scrape ? 'refresh' : 'revalidation', stage: scrape ? 'fetching' : 'validating', sourcesCompleted: 0, sourcesTotal: 0, sourcesSucceeded: 0, candidates: 0, checked: 0, found: 0, startedAt: new Date().toISOString(), error: null });
+  Object.assign(cycleStatus, { busy: true, type: scrape ? 'refresh' : 'revalidation', stage: scrape ? 'fetching' : 'validating', validationStartedAt: null, sourcesCompleted: 0, sourcesTotal: 0, sourcesSucceeded: 0, candidates: 0, checked: 0, found: 0, startedAt: new Date().toISOString(), error: null });
   (async () => {
     const revision = pool.revision;
     let candidates = pool.list();
@@ -30,7 +30,7 @@ function cycle(scrape) {
       candidates = [...new Map([...pool.list(), ...result.proxies].map(proxy => [proxy.url, proxy])).values()];
       console.log(`Scraped ${candidates.length} unique proxies from ${result.successes}/${result.total} sources`);
     }
-    Object.assign(cycleStatus, { stage: 'validating', candidates: candidates.length });
+    Object.assign(cycleStatus, { stage: 'validating', candidates: candidates.length, validationStartedAt: new Date().toISOString() });
     // Publish successful batches early only when starting from an empty pool.
     // Existing pools stay available until the replacement has been fully checked.
     const publishEarly = pool.list().length === 0;

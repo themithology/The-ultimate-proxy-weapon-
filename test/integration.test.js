@@ -34,7 +34,7 @@ test('parse and fetch feeds, validate and serve rotating local proxies', async t
   const scraped = await scrapeSources({ sourcesPath, timeout: 1000 }); assert.equal(scraped.successes, 1); assert.equal(scraped.proxies.length, 2);
   assert.equal(parseFeed('socks5://1.2.3.4:1080\n2.3.4.5:0', 'http')[0].protocol, 'socks5');
   const batches = [];
-  const valid = await validateProxies(scraped.proxies, { concurrency: 1, timeout: 1000, echoUrl: `http://127.0.0.1:${echo.address().port}`, onBatch: batch => batches.push(batch.length) }); assert.equal(valid.length, 2); assert.deepEqual(batches, [1, 1]);
+  const valid = await validateProxies(scraped.proxies, { concurrency: 1, progressBatchSize: 1, timeout: 1000, echoUrl: `http://127.0.0.1:${echo.address().port}`, onBatch: batch => batches.push(batch.length) }); assert.equal(valid.length, 2); assert.deepEqual(batches, [1, 1]);
   const pool = new ProxyPool({ directory: dir }); await pool.load(); await pool.replace(valid);
   assert.equal((await fs.readFile(path.join(dir, 'proxies.txt'), 'utf8')).trim().split('\n').length, 2);
   const gateway = createProxyServer(pool, config); await gateway.listen(); t.after(() => gateway.close(true));

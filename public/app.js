@@ -46,7 +46,9 @@ function render() {
     showNotice(`Fetching sources: ${number(data.cycle.sourcesCompleted || 0)} / ${number(data.cycle.sourcesTotal || 0)} finished · ${number(data.cycle.sourcesSucceeded || 0)} succeeded.`);
     showingCycleError = true;
   } else if (busy && data.cycle.stage === 'validating') {
-    showNotice(`Checking proxies: ${number(data.cycle.checked || 0)} / ${number(data.cycle.candidates || 0)} tested · ${number(data.cycle.found || 0)} working.`);
+    const seconds = Math.max(1, (Date.now() - Date.parse(data.cycle.validationStartedAt || Date.now())) / 1000);
+    const rate = Math.round((data.cycle.checked || 0) / seconds);
+    showNotice(`Checking proxies: ${number(data.cycle.checked || 0)} / ${number(data.cycle.candidates || 0)} tested · ${number(data.cycle.found || 0)} working · ${number(rate)} checks/sec.`);
     showingCycleError = true;
   } else if (data.cycle?.error) { showNotice(`Last cycle failed: ${data.cycle.error}`, true); showingCycleError = true; }
   else if (showingCycleError) { $('#notice').hidden = true; showingCycleError = false; }
