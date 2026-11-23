@@ -35,6 +35,9 @@ export class BoundedHttpProxyAgent extends Agent {
         finished = true; clearTimeout(timer); request.off('close', onClientClose);
         if (error) reject(error); else resolve(socket);
       };
+      // A malformed HTTPS proxy can emit a late TLS error after the request
+      // was already aborted. Keep a socket-level listener for its lifetime.
+      connector.on('socket', socket => socket.on('error', () => {}));
       connector.once('error', error => finish(error));
       connector.once('connect', (response, socket, head) => {
         if (response.statusCode !== 200) {
@@ -43,6 +46,9 @@ export class BoundedHttpProxyAgent extends Agent {
         if (head.length) socket.unshift(head);
         if (!opts.secureEndpoint) return finish(null, socket);
         const tlsSocket = tls.connect({ socket, host, servername: net.isIP(host) ? undefined : host, rejectUnauthorized: opts.rejectUnauthorized !== false });
+        // axios/Node still receive the same error; this listener only prevents a
+        // late error from becoming an uncaught event during cancellation races.
+        tlsSocket.on('error', () => {});
         finish(null, tlsSocket);
       });
       connector.end();

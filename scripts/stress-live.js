@@ -6,8 +6,8 @@ function fail(error) {
   console.error(`::error::${String(error?.stack || error).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')}`);
   process.exit(1);
 }
-process.on('uncaughtException', fail);
-process.on('unhandledRejection', fail);
+process.on('uncaughtException', (error, origin) => fail(new Error(`uncaughtException (${origin}): ${error?.stack || error}`)));
+process.on('unhandledRejection', error => fail(new Error(`unhandledRejection: ${error?.stack || error}`)));
 const timer = setTimeout(() => fail(new Error('Live stress test exceeded 3 minutes')), 180000);
 try {
   const result = await scrapeSources({ limit: 20000, timeout: 10000 });

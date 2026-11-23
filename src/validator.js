@@ -1,12 +1,12 @@
 import axios from 'axios';
 import { BoundedHttpProxyAgent } from './httpProxyAgent.js';
-import { SocksProxyAgent } from 'socks-proxy-agent';
+import { SafeSocksProxyAgent } from './safeSocksProxyAgent.js';
 import pLimit from 'p-limit';
 
 export async function validateProxy(proxy, { echoUrl = 'https://api.ipify.org?format=json', timeout = 4000 } = {}) {
   const started = performance.now(); let agent;
   try {
-    agent = proxy.protocol.startsWith('socks') ? new SocksProxyAgent(proxy.url, { timeout }) : new BoundedHttpProxyAgent(proxy.url, { timeout });
+    agent = proxy.protocol.startsWith('socks') ? new SafeSocksProxyAgent(proxy.url, { timeout }) : new BoundedHttpProxyAgent(proxy.url, { timeout });
     const response = await axios.get(echoUrl, { httpAgent: agent, httpsAgent: agent, proxy: false, timeout, signal: AbortSignal.timeout(timeout), maxRedirects: 0, maxContentLength: 65536 });
     const ip = typeof response.data === 'string' ? response.data.trim() : (response.data.ip ?? response.data.origin);
     // This checks the observed exit address, not all possible header leaks or identity linkage.

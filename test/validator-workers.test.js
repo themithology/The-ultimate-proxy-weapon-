@@ -47,3 +47,27 @@ test('HTTPS echo validation works through an HTTP CONNECT proxy', async t => {
   const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], { env: { ...process.env, NODE_EXTRA_CA_CERTS: cert }, timeout: 5000 });
   assert.equal(stdout.trim(), '127.0.0.1');
 });
+
+test('malformed TLS from HTTP, HTTPS and SOCKS proxies does not crash the process', async t => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const sockets = new Set();
+  function track(socket) { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); socket.on('error', () => {}); }
+  const httpProxy = net.createServer(socket => { track(socket); socket.once('data', () => socket.end('HTTP/1.1 200 Connection Established\r\n\r\nHTTP/1.1 200 OK\r\n\r\n')); });
+  const httpsProxy = net.createServer(socket => { track(socket); socket.end('HTTP/1.1 200 OK\r\n\r\n'); });
+  const socksProxy = net.createServer(socket => {
+    track(socket); let stage = 0;
+    socket.on('data', () => {
+      if (stage++ === 0) socket.write(Buffer.from([5, 0]));
+      else if (stage === 2) socket.write(Buffer.from([5, 0, 0, 1, 127, 0, 0, 1, 0, 80]));
+      else socket.end('HTTP/1.1 200 OK\r\n\r\n');
+    });
+  });
+  const servers = [httpProxy, httpsProxy, socksProxy];
+  for (const server of servers) await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { for (const socket of sockets) socket.destroy(); await Promise.all(servers.map(server => new Promise(resolve => server.close(resolve)))); });
+  const [httpPort, httpsPort, socksPort] = servers.map(server => server.address().port);
+  const script = `import { validateProxies } from './src/validator.js'; const keepAlive=setInterval(()=>{},1000); const endpoints = [['http',${httpPort}],['https',${httpsPort}],['socks5',${socksPort}]]; const proxies = Array.from({length:600},(_,i)=>{const [protocol,port]=endpoints[i%3]; return {protocol,port,host:'127.0.0.1',url:protocol+'://127.0.0.1:'+port};}); const valid=await validateProxies(proxies,{concurrency:300,timeout:1500,echoUrl:'https://127.0.0.1:4443/'}); clearInterval(keepAlive); console.log('completed',valid.length);`;
+  const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], { timeout: 15000 });
+  assert.match(stdout, /completed 0/);
+});
