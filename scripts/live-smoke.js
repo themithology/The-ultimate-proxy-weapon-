@@ -42,7 +42,7 @@ try {
   phase = 'validating proxies';
   report(`Testing ${candidates.length} sampled proxies: ${groups.map((g, i) => `${['http','https','socks4','socks5'][i]}=${g.length}`).join(', ')}`);
   let batches = 0;
-  const verified = await validateProxies(candidates, { concurrency: 300, timeout: 4000, onBatch: batch => report(`Validation batch ${++batches}: ${batch.length} passed`) });
+  const verified = await validateProxies(candidates, { concurrency: 300, timeout: 4000, onBatch: batch => console.log(`Validation batch ${++batches}: ${batch.length} passed`) });
   report(`Validated: ${verified.length} (${['http', 'https', 'socks4', 'socks5'].map(p => `${p}=${verified.filter(v => v.protocol === p).length}`).join(', ')})`);
   if (!verified.length) throw new Error('No sampled public proxies passed validation; this may be transient, but the live test cannot pass');
   phase = 'starting gateway and API';
@@ -62,6 +62,7 @@ try {
   let succeeded = false;
   // Public endpoints can die between validation and this request; try several.
   for (const candidate of verified.slice(0, 20)) {
+    pool.retiredUntil.delete(candidate.url);
     await pool.replace([candidate]);
     try {
       const { stdout } = await curl('curl', ['--silent', '--show-error', '--fail', '--max-time', '12', '--noproxy', '', '-x', proxyUrl, 'https://api.ipify.org?format=json'], { timeout: 15000 });
@@ -69,19 +70,20 @@ try {
       if (ip !== candidate.host) throw new Error('Gateway returned an unexpected exit IP');
       report(`Live gateway CONNECT succeeded through ${candidate.protocol} proxy; exit IP matched.`);
       succeeded = true; break;
-    } catch (error) { console.warn(`Gateway attempt via ${candidate.protocol} failed: ${error.message.split('\n')[0]}`); }
+    } catch (error) { report(`Gateway attempt via ${candidate.protocol} failed: ${error.message.split('\n')[0]}`); }
   }
   if (!succeeded) report('No sampled proxy completed gateway CONNECT; continuing to test path-based fetch independently.');
   phase = 'testing path-based fetch'; report(`Live test: ${phase}`);
   let pathSucceeded = false;
   for (const candidate of verified.slice(0, 5)) {
+    pool.retiredUntil.delete(candidate.url);
     await pool.replace([candidate]);
     try {
       const response = await fetch(`${base}/fetch?url=${encodeURIComponent('https://api.ipify.org?format=json')}`, { headers: { 'x-api-key': 'live-test' }, signal: AbortSignal.timeout(12000) });
       if (!response.ok || (await response.json()).ip !== candidate.host) throw new Error(`Unexpected fetch result: HTTP ${response.status}`);
       report(`Live path-based fetch succeeded through ${candidate.protocol} proxy; exit IP matched.`);
       pathSucceeded = true; break;
-    } catch (error) { console.warn(`Path fetch via ${candidate.protocol} failed: ${error.message}`); }
+    } catch (error) { report(`Path fetch via ${candidate.protocol} failed: ${error.message}`); }
   }
   if (!pathSucceeded || !succeeded) throw new Error('Real-network gateway or path-based fetch failed');
 } catch (error) {
