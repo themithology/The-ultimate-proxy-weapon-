@@ -50,3 +50,15 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Verify dashboard over plain HTTP in a real browser
         run: node scripts/ui-smoke.js
+  live-stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.0
+          cache: npm
+      - run: npm ci
+      - name: Check 20,000 real public proxies with 2,000 workers
+        run: node scripts/stress-live.js
