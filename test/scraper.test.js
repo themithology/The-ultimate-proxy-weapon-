@@ -71,3 +71,16 @@ test('2xx feed responses other than 200 are accepted', async t => {
   const result = await scrapeSources({ sourcesPath, fetchImpl: async () => new Response('1.2.3.4:80', { status: 201 }) });
   assert.equal(result.successes, 1); assert.equal(result.proxies.length, 1);
 });
+
+test('temporary feed failures recover promptly without waiting for missing-feed cooldown', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'source-recovery-')); t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const sourcesPath = path.join(directory, 'sources.json'), url = 'http://temporary.test';
+  await fs.writeFile(sourcesPath, JSON.stringify([{ url, protocol: 'http' }]));
+  const sourceCooldowns = new Map(); let attempts = 0;
+  const options = { sourcesPath, sourceCooldowns, transientCooldownMs: 25, missingCooldownMs: 3600000,
+    fetchImpl: async () => { if (++attempts === 1) throw new Error('network unavailable'); return new Response('1.2.3.4:80'); } };
+  const first = await scrapeSources(options); assert.equal(first.successes, 0);
+  const skipped = await scrapeSources(options); assert.equal(skipped.skipped, 1); assert.equal(attempts, 1);
+  sourceCooldowns.set(url, Date.now() - 1);
+  const recovered = await scrapeSources(options); assert.equal(recovered.successes, 1); assert.equal(recovered.proxies.length, 1);
+});

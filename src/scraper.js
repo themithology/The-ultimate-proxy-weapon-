@@ -14,13 +14,13 @@ export function parseFeed(text, defaultProtocol) {
   }
   return result;
 }
-export async function scrapeSources({ sourcesPath = 'config/sources.json', timeout = 10000, fetchImpl = fetch, limit = Infinity, onProgress = () => {}, cursorBySource = new Map(), sourceCooldowns = new Map(), missingCooldownMs = 3600000 } = {}) {
+export async function scrapeSources({ sourcesPath = 'config/sources.json', timeout = 10000, fetchImpl = fetch, limit = Infinity, onProgress = () => {}, cursorBySource = new Map(), sourceCooldowns = new Map(), missingCooldownMs = 3600000, transientCooldownMs = 20000 } = {}) {
   const sources = JSON.parse(await fs.readFile(sourcesPath, 'utf8'));
   if (!Array.isArray(sources)) throw new Error('sources.json must contain an array');
-  let completed = 0, successes = 0;
+  let completed = 0, successes = 0, skipped = 0;
   const settled = await Promise.allSettled(sources.map(async source => {
     if ((sourceCooldowns.get(source.url) ?? 0) > Date.now()) {
-      completed++; onProgress({ completed, total: sources.length, successes });
+      skipped++; completed++; onProgress({ completed, total: sources.length, successes });
       return [];
     }
     const controller = new AbortController();
@@ -31,9 +31,8 @@ export async function scrapeSources({ sourcesPath = 'config/sources.json', timeo
     const fetchSource = async () => {
       const response = await fetchImpl(source.url, { signal: controller.signal, redirect: 'manual' });
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        const error = new Error(`HTTP ${response.status}`); error.status = response.status; throw error;
       }
-      sourceCooldowns.delete(source.url);
       const reader = response.body.getReader(); let size = 0, chunks = [];
       try {
         while (true) {
@@ -48,10 +47,10 @@ export async function scrapeSources({ sourcesPath = 'config/sources.json', timeo
     };
     try {
       const entries = await Promise.race([fetchSource(), deadline]);
-      successes++;
+      successes++; sourceCooldowns.delete(source.url);
       return entries;
     } catch (error) {
-      sourceCooldowns.set(source.url, Date.now() + missingCooldownMs);
+      sourceCooldowns.set(source.url, Date.now() + ([404, 410].includes(error.status) ? missingCooldownMs : transientCooldownMs));
       throw error;
     } finally {
       clearTimeout(timer); controller.abort(); completed++;
@@ -77,5 +76,5 @@ export async function scrapeSources({ sourcesPath = 'config/sources.json', timeo
     }
   }
   lists.forEach(({ url, entries }, i) => cursorBySource.set(url, (offsets[i] + positions[i]) % entries.length));
-  return { proxies: [...unique.values()], successes, total: sources.length, limited: unique.size >= limit };
+  return { proxies: [...unique.values()], successes, skipped, total: sources.length, limited: unique.size >= limit };
 }

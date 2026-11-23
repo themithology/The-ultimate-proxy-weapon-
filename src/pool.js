@@ -6,7 +6,7 @@ export class ProxyPool {
     this.directory = directory; this.rotation = rotation; this.proxies = []; this.index = 0;
     this.maxSize = maxSize; this.cooldownMs = cooldownMs; this.retiredUntil = new Map();
     this.healthBaselineRequests = healthBaselineRequests; this.healthWindow = healthWindow; this.healthRetentionRatio = healthRetentionRatio; this.health = new Map();
-    this.lastScrape = null; this.revision = 0; this.evictions = new Map(); this.writeQueue = Promise.resolve();
+    this.lastScrape = null; this.revision = 0; this.evictions = new Map(); this.writeQueue = Promise.resolve(); this.dirty = false; this.writing = false;
   }
   async load() {
     await fs.mkdir(this.directory, { recursive: true });
@@ -70,14 +70,24 @@ export class ProxyPool {
     }
   }
   persist() {
-    const snapshot = this.list();
-    this.writeQueue = this.writeQueue.catch(() => {}).then(async () => {
-      await fs.mkdir(this.directory, { recursive: true });
-      for (const [name, content] of [['proxies.json', JSON.stringify(snapshot, null, 2) + '\n'], ['proxies.txt', snapshot.map(p => p.url).join('\n') + (snapshot.length ? '\n' : '')]]) {
-        const target = path.join(this.directory, name), temp = `${target}.${process.pid}.tmp`;
-        await fs.writeFile(temp, content); await fs.rename(temp, target);
-      }
-    });
+    // Coalesce bursts of removals: do not retain and write a full snapshot per request.
+    this.dirty = true;
+    if (!this.writing) {
+      this.writing = true;
+      this.writeQueue = this.writeQueue.catch(() => {}).then(async () => {
+        try {
+          await fs.mkdir(this.directory, { recursive: true });
+          while (this.dirty) {
+            this.dirty = false;
+            const snapshot = this.list();
+            for (const [name, content] of [['proxies.json', JSON.stringify(snapshot, null, 2) + '\n'], ['proxies.txt', snapshot.map(p => p.url).join('\n') + (snapshot.length ? '\n' : '')]]) {
+              const target = path.join(this.directory, name), temp = `${target}.${process.pid}.tmp`;
+              await fs.writeFile(temp, content); await fs.rename(temp, target);
+            }
+          }
+        } finally { this.writing = false; }
+      });
+    }
     return this.writeQueue;
   }
 }

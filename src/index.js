@@ -25,7 +25,7 @@ function cycle(scrape) {
         onProgress: ({ completed, total, successes }) => Object.assign(cycleStatus, { sourcesCompleted: completed, sourcesTotal: total, sourcesSucceeded: successes }) });
       pool.lastScrape = new Date().toISOString();
       // A feed outage must not erase a previously usable pool.
-      if (!result.successes) throw new Error('All sources failed; preserving existing pool');
+      if (!result.successes) throw new Error(`No feeds succeeded (${result.skipped}/${result.total} on cooldown); preserving existing pool. Check earlier Source failed logs for the underlying error`);
       // Always recheck the old pool as well as a diverse sample of fresh feeds.
       candidates = [...new Map([...pool.list(), ...result.proxies].map(proxy => [proxy.url, proxy])).values()];
       console.log(`Scraped ${candidates.length} unique proxies from ${result.successes}/${result.total} sources`);
