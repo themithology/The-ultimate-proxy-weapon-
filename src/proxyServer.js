@@ -61,8 +61,8 @@ export function createProxyServer(pool, config) {
   server.server.on('request', (request, response) => {
     response.once('finish', () => {
       const url = selected.get(request);
-      if (url && response.statusCode >= 200 && response.statusCode < 300) pool.recordOutcome(url, true);
-      else if (url) pool.remove(url).catch(e => console.error('Failed to persist pool:', e));
+      // A target's status is not evidence of a proxy transport failure.
+      if (url) pool.recordOutcome(url, true);
     });
   });
   server.on('tunnelConnectFailed', ({ customTag }) => { if (customTag) pool.remove(customTag).catch(e => console.error('Failed to persist pool:', e)); });

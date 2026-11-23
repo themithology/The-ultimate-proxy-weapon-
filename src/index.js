@@ -48,7 +48,7 @@ function cycle(scrape) {
     });
     const stillHealthy = valid.filter(p => (pool.evictions.get(p.url) ?? 0) <= revision);
     await pool.replace(stillHealthy);
-    pool.evictions.clear();
+    for (const [url, evictedAt] of pool.evictions) if (evictedAt <= revision) pool.evictions.delete(url);
     console.log(`Validated ${stillHealthy.length}/${candidates.length} proxies`);
   })().catch(error => { cycleStatus.error = error.message; console.error('Cycle failed:', error); }).finally(() => { busy = false; cycleStatus.busy = false; cycleStatus.stage = 'idle'; cycleStatus.lastCompletedAt = new Date().toISOString(); });
   return true;

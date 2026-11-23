@@ -26,7 +26,7 @@ test('baseline and rolling window retire degraded proxies and persist removal', 
   assert.equal(pool.list().length, 0, 'zero baseline retires proxy'); await pool.writeQueue;
 });
 
-test('gateway immediately retires an upstream on a non-2xx response', async t => {
+test('gateway keeps proxies for target errors and removes failed connections', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gateway-health-')); t.after(() => fs.rm(directory, { recursive: true, force: true }));
   let status = 200;
   const target = http.createServer((_req, res) => { res.statusCode = status; res.end('result'); });
@@ -44,6 +44,8 @@ test('gateway immediately retires an upstream on a non-2xx response', async t =>
   }
   status = 201; assert.equal(await request(), 201); status = 200; assert.equal(await request(), 200);
   assert.equal(pool.getHealth(url).baselineSuccessRate, 1);
-  status = 503; assert.equal(await request(), 503); assert.equal(pool.list().length, 0); await pool.writeQueue;
+  status = 503; assert.equal(await request(), 503); assert.equal(pool.list().length, 1);
+  await upstream.close(true);
+  await request(); await pool.writeQueue; assert.equal(pool.list().length, 0, 'connection failure retires proxy');
   assert.equal(await request(), 503);
 });

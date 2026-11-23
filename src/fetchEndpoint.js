@@ -1,13 +1,17 @@
 import axios from 'axios';
 import { BoundedHttpProxyAgent } from './httpProxyAgent.js';
 import { SafeSocksProxyAgent } from './safeSocksProxyAgent.js';
-import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
+const methods = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']);
+const requestHeaders = ['user-agent', 'referer', 'origin', 'accept', 'range', 'if-range', 'if-none-match', 'if-modified-since', 'content-type', 'content-length'];
+const responseHeaders = ['content-type', 'content-length', 'content-range', 'content-encoding', 'accept-ranges', 'etag', 'last-modified'];
+
 // A path-based HTTP fetch API, not a standard CONNECT forward proxy.
-export function createFetchHandler(pool, { timeout = 20000, maxBytes = 10 * 1024 * 1024, maxConcurrent = 50 } = {}) {
+export function createFetchHandler(pool, { timeout = 20000, maxConcurrent = 100 } = {}) {
   let inFlight = 0;
   return async (req, res) => {
+    if (!methods.has(req.method)) return res.status(405).json({ error: 'Unsupported method' });
     if (typeof req.query.url !== 'string') return res.status(400).json({ error: 'Provide a target with ?url=https%3A%2F%2Fexample.com' });
     let target;
     try { target = new URL(req.query.url); } catch { return res.status(400).json({ error: 'Invalid URL' }); }
@@ -18,33 +22,38 @@ export function createFetchHandler(pool, { timeout = 20000, maxBytes = 10 * 1024
     if (!upstream) return res.status(503).json({ error: 'No working proxies in the pool' });
     inFlight++;
     const controller = new AbortController();
+    // Bound connection and response headers, not the length of a media stream.
     const timeoutId = setTimeout(() => controller.abort(), timeout);
-    let clientGone = false;
-    const abortOnClose = () => { if (!res.writableFinished) { clientGone = true; controller.abort(); } };
+    let clientGone = false, upstreamFailed = false;
+    const abortOnClose = () => { if (!res.writableFinished && !upstreamFailed) { clientGone = true; controller.abort(); } };
     res.once('close', abortOnClose);
-    let agent, observed = false;
+    let agent;
     try {
-      agent = upstream.protocol.startsWith('socks') ? new SafeSocksProxyAgent(upstream.url, { timeout }) : new BoundedHttpProxyAgent(upstream.url, { timeout });
-      const response = await axios.get(target.href, { httpAgent: agent, httpsAgent: agent, proxy: false, responseType: 'stream',
-        signal: controller.signal, timeout, maxRedirects: 0, validateStatus: () => true });
-      if (response.status < 200 || response.status >= 300)
-        pool.remove(upstream.url).catch(error => console.error('Failed to persist pool:', error));
+      const headers = { 'accept-encoding': 'identity' };
+      for (const name of requestHeaders) if (req.headers[name] !== undefined) headers[name] = req.headers[name];
+      const hasBody = !['GET', 'HEAD'].includes(req.method);
+      if (hasBody && !headers['content-type']) headers['content-type'] = 'application/octet-stream';
+      agent = upstream.protocol.startsWith('socks')
+        ? new SafeSocksProxyAgent(upstream.url, { timeout, disableConnectedTimeout: true })
+        : new BoundedHttpProxyAgent(upstream.url, { timeout });
+      const response = await axios({ method: req.method, url: target.href, headers, data: hasBody ? req : undefined,
+        httpAgent: agent, httpsAgent: agent, proxy: false, responseType: 'stream', decompress: false,
+        signal: controller.signal, timeout: 0, maxRedirects: 0, validateStatus: () => true });
+      clearTimeout(timeoutId);
+      // Preserve target statuses, even 403/404/429: they do not prove a proxy is bad.
       res.status(response.status);
-      // Do not forward cookies, redirects, or arbitrary origin headers onto the dashboard domain.
-      if (response.headers['content-type']) res.set('Content-Type', response.headers['content-type']);
-      res.set({ 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'none'; sandbox", 'X-Content-Type-Options': 'nosniff' });
+      for (const name of responseHeaders) if (response.headers[name] !== undefined) res.set(name, response.headers[name]);
+      res.set({ 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'none'; sandbox", 'X-Content-Type-Options': 'nosniff',
+        'Access-Control-Expose-Headers': 'X-Upstream-Location, Content-Range, Accept-Ranges, Content-Length, ETag, Last-Modified' });
       if (response.headers.location) res.set('X-Upstream-Location', response.headers.location);
-      let bytes = 0;
-      const limiter = new Transform({ transform(chunk, _encoding, callback) {
-        bytes += chunk.length;
-        if (bytes > maxBytes) callback(new Error('Response exceeds size limit')); else callback(null, chunk);
-      }});
-      await pipeline(response.data, limiter, res);
-      observed = true;
-      if (response.status >= 200 && response.status < 300) pool.recordOutcome(upstream.url, true);
+      response.data.once('error', () => { upstreamFailed = true; });
+      response.data.once('aborted', () => { upstreamFailed = true; });
+      await pipeline(response.data, res);
+      pool.recordOutcome(upstream.url, true);
     } catch (error) {
-      if (!observed && !clientGone && !res.writableFinished) pool.remove(upstream.url).catch(e => console.error('Failed to persist pool:', e));
-      if (!res.headersSent && !res.destroyed) res.status(502).json({ error: 'Proxy fetch failed or timed out' });
+      // Don't punish a proxy when the calling client abandons its stream.
+      if (!clientGone) pool.remove(upstream.url).catch(e => console.error('Failed to persist pool:', e));
+      if (!res.headersSent && !res.destroyed) res.status(502).json({ error: 'Proxy connection or response timed out' });
       else if (!res.writableFinished) res.destroy();
       console.warn(`Fetch failed through ${upstream.protocol}: ${error.message}`);
     } finally {

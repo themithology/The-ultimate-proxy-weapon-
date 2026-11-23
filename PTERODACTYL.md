@@ -37,4 +37,4 @@ The dashboard and `/dashboard/*` routes do not require a login. Anyone who can r
 
 ### Only one port allocated?
 
-You can use the path-based `GET /fetch?url=...` endpoint on the dashboard's existing port; pass your `x-api-key` header. See the path-based endpoint section in README.md for a curl example and limitations. This is an HTTP fetch API, not a normal forward proxy, so configure your scraper to call this API explicitly. `curl -x` and other standard proxy clients still need a separate gateway allocation or a host-provided CONNECT/TCP proxy. The process continues to bind `PROXY_PORT` internally, even if it is not externally allocated.
+You can use the path-based `/fetch?url=...` endpoint on the dashboard's existing port; pass your `x-api-key` header. See the path-based endpoint section in README.md for a curl example and limitations. This is an HTTP fetch API, not a normal forward proxy, so configure your scraper to call this API explicitly. `curl -x` and other standard proxy clients still need a separate gateway allocation or a host-provided CONNECT/TCP proxy. The process continues to bind `PROXY_PORT` internally, even if it is not externally allocated.

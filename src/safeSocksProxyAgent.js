@@ -1,11 +1,20 @@
 import { SocksProxyAgent } from 'socks-proxy-agent';
 
-// Preserve normal request error propagation while keeping late errors on a
-// socket alive through cancellation or an invalid upstream TLS handshake.
+// Preserve normal error propagation while guarding late socket errors.
 export class SafeSocksProxyAgent extends SocksProxyAgent {
+  constructor(proxy, options = {}) {
+    super(proxy, options);
+    this.disableConnectedTimeout = options.disableConnectedTimeout === true;
+  }
   async connect(request, options) {
-    const socket = await super.connect(request, options);
-    socket.on('error', () => {});
-    return socket;
+    let rawSocket;
+    const rememberSocket = info => { rawSocket = info.socket; };
+    request.once('proxy', rememberSocket);
+    try {
+      const socket = await super.connect(request, options);
+      socket.on('error', () => {});
+      if (this.disableConnectedTimeout) { rawSocket?.setTimeout(0); socket.setTimeout(0); }
+      return socket;
+    } finally { request.off('proxy', rememberSocket); }
   }
 }

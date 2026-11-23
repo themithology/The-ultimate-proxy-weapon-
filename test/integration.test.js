@@ -76,8 +76,8 @@ test('parse and fetch feeds, validate and serve rotating local proxies', async t
   assert.equal(stats.length, 2);
   const first = pool.select(), second = pool.select(); assert.notEqual(first.url, second.url);
   const missing = await fetch(`${base}/fetch?url=${encodeURIComponent(targetUrl + 'missing')}`, { headers: { 'x-api-key': 'key' } });
-  assert.equal(missing.status, 404); assert.equal(pool.list().length, 1, 'non-2xx should retire the selected proxy');
+  assert.equal(missing.status, 404); assert.equal(pool.list().length, 2, 'target errors must not retire a proxy');
   const redirect = await fetch(`${base}/fetch?url=${encodeURIComponent(targetUrl + 'redirect')}`, { headers: { 'x-api-key': 'key' }, redirect: 'manual' });
-  assert.equal(redirect.status, 302); assert.equal(pool.list().length, 0, 'redirects also retire the selected proxy');
+  assert.equal(redirect.status, 302); assert.equal(pool.list().length, 2, 'redirects must not retire a proxy');
   await pool.replace([]); assert.match(await connect(gatewayPort, 'alice:secret'), /503/);
 });
